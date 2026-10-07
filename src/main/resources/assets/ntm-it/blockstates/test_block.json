@@ -1,0 +1,8 @@
+{
+	"variants": {
+		"facing=north": { "model": "ntm-it:test_block" },
+		"facing=south": { "model": "ntm-it:test_block", "y": 180 },
+		"facing=west":  { "model": "ntm-it:test_block", "y": 270 },
+		"facing=east":  { "model": "ntm-it:test_block", "y": 90 }
+	}
+}

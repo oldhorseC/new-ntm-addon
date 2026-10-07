@@ -1,0 +1,104 @@
+tile.ntm-it.test_block.name=测试方块
+
+# 汽水混合物流体（RBMK 锅炉输出）
+fluid.wetsteam=汽水混合物
+fluid.hbmfluid.wetsteam=汽水混合物
+fluid.wetsteam_hot=热汽水混合物
+fluid.hbmfluid.wetsteam_hot=热汽水混合物
+fluid.wetsteam_superhot=超热汽水混合物
+fluid.hbmfluid.wetsteam_superhot=超热汽水混合物
+fluid.wetsteam_ultrahot=超浓密汽水混合物
+fluid.hbmfluid.wetsteam_ultrahot=超浓密汽水混合物
+
+# 汽包（汽水分离器）
+tile.ntm-it.steam_drum.name=汽包
+tooltip.ntm-it.steam_drum.hint=把汽水混合物分离成干蒸汽和水。把 RBMK 锅炉产出的混合物送进来即可，不耗电。
+tooltip.ntm-it.steam_drum.ports=端口：底面=混合物入口，顶面=干蒸汽出口，两端=水出口。
+hud.ntm-it.steam_drum.status.no_mixture=不是汽水混合物
+hud.ntm-it.steam_drum.status.empty=输入罐为空
+hud.ntm-it.steam_drum.status.output_full=输出罐已满
+hud.ntm-it.steam_drum.status.separating=正在分离
+hud.ntm-it.steam_drum.status.idle=待机
+itemGroup.tabITContent=IT内容
+chat.ntm-it.console_bind=NTM-IT 控制台已重新对准 %s, %s, %s
+tile.ntm-it.test_multiblock.name=IT 测试多方�?
+# 服务器多方块（SERVER_PLAN.md §8.2�?tile.ntm-it.server_core.name=服务器核心单�?tile.ntm-it.server_compute.name=服务器计算单�?tile.ntm-it.server_heat_exchanger.name=服务器热交换�?
+# ---- server connector (item, §5.2)
+item.ntm-it.server_connector.name=NTM-IT 服务器连接器
+item.ntm-it.server_connector.desc=潜行右键设备：记录坐标�?$设备类型与数据类枚举
+item.ntm-it.server_connector.bound=已绑�?%s, %s, %s —�?该设备提�?%s 个数据类
+item.ntm-it.server_connector.nodevice=该方块不提供任何数据�?item.ntm-it.server_connector.nofields=该设备当前没有可读取的数据类
+item.ntm-it.server_connector.unbound=连接器尚未绑�?—�?潜行右键一个设�?
+# 服务器核心界面（§7.1；四�?gui.ntm-it.server.state.* 键随 P2 的状态机一起加入）
+gui.ntm-it.server.title=服务器控�?gui.ntm-it.server.tab.classes=数据�?gui.ntm-it.server.tab.groups=派发�?gui.ntm-it.server.table.name=名称
+gui.ntm-it.server.table.type=类型
+gui.ntm-it.server.table.source=来源
+gui.ntm-it.server.table.period=周期
+gui.ntm-it.server.table.mode=模式
+gui.ntm-it.server.table.targets=目标�?gui.ntm-it.server.empty.classes=还没有数据类
+gui.ntm-it.server.empty.groups=还没有派发组
+gui.ntm-it.server.power=电力�?s / %s
+gui.ntm-it.server.heat=热量(TU)�?s / %s
+tooltip.ntm-it.server.compute=算力�?s / %s
+tooltip.ntm-it.server.cooling=散热�?s TU/t
+
+# 引导：物品悬浮说明（§4.7�?tooltip.ntm-it.server.column=放下后是一�?3 格高的柱：你放下的那一格是核心，上面两格属于整个结构�?tooltip.ntm-it.server.right_click=右键打开控制界面，潜行右键查看状态播报�?tooltip.ntm-it.server.server_core.hint=核心单元：六面都能接 HE 电力，运行数据类，并以产热为代价�?tooltip.ntm-it.server.server_core.faces=正面朝向你：两侧面接计算单元，背面放热交换器�?tooltip.ntm-it.server.server_compute.hint=计算单元：为相连的核心提供算力，同时产热�?tooltip.ntm-it.server.server_compute.faces=正面朝向你：它靠两侧面接到核心上，背面放热交换器�?tooltip.ntm-it.server.server_heat_exchanger.hint=热交换器：负责把热量带走的模块，放在核心或计算单元旁边即可�?tooltip.ntm-it.server.server_heat_exchanger.faces=四个水平方向任意一面都能吸热（摆在柱体背面是设计预期）；紧贴的热交换器会合成一体；冷却液从一个罐进、从另一个罐出�?
+# 聊天播报（对核心潜行右键，�?.7�?chat.ntm-it.server.status.head=服务器核�?@ %s, %s, %s
+chat.ntm-it.server.status.facing.north=正面朝北（两侧接计算单元，背面放热交换器�?chat.ntm-it.server.status.facing.south=正面朝南（两侧接计算单元，背面放热交换器�?chat.ntm-it.server.status.facing.west=正面朝西（两侧接计算单元，背面放热交换器�?chat.ntm-it.server.status.facing.east=正面朝东（两侧接计算单元，背面放热交换器�?chat.ntm-it.server.status.compute=算力�?s / %s（已连接计算单元 %s 个）
+chat.ntm-it.server.status.heat=热量�?s / %s，散�?%s TU/t，来�?%s 个热交换�?chat.ntm-it.server.status.state.running=状态：运行（一切正常）
+chat.ntm-it.server.status.state.throttled=状态：降频（已到散热上限，轮询变慢�?chat.ntm-it.server.status.state.halted=状态：停机（过热，或没有电力）
+chat.ntm-it.server.status.state.under_power=状态：电力不足（支付不了当前负载）
+chat.ntm-it.server.status.power=电力�?s / %s HE
+chat.ntm-it.server.status.no_coolant=没有可用的冷却液——已连接的热交换器在空转�?
+# 界面：状态行与帮助（§7.1�?gui.ntm-it.server.state.running=运行
+gui.ntm-it.server.state.throttled=降频
+gui.ntm-it.server.state.halted=停机
+gui.ntm-it.server.state.under_power=电力不足
+gui.ntm-it.server.state.label=状态：%s
+gui.ntm-it.server.no_coolant=没有可用的流体——输入罐为空，或该流体无法被加热�?gui.ntm-it.server.hint.column=两侧接计算单元，背面放热交换�?gui.ntm-it.server.hint.panel=任意一面接 HE 电力
+gui.ntm-it.server.status.tip=算力来自计算单元，散热来自热交换器，热量随运行自然累积；断电或过热会让服务器停机。要让控制面板读本机：用多目标引爆器连接核心，再�?Query Block 节点�?server.compute / server.heat / server.power / server.state / server.cooling�?
+# 准心浮层沿用 HBM 的官方诊断转储（逐行 key: value），因此不需要本地化键�?
+# 电池位与�?NBT 读取（�?.6�?gui.ntm-it.server.battery.label=电池
+gui.ntm-it.server.battery.empty=在此放入电池
+gui.ntm-it.server.nbt.none=该物品没�?NBT 数据
+gui.ntm-it.server.nbt.entry=%s = %s
+
+# 准心浮层的条目名（�?.7）；键名与各 TE 发布的标识一�?hud.ntm-it.server.title=服务器单元状�?gui.ntm-it.server.mode.collect=采集
+gui.ntm-it.server.mode.dispatch=派发
+hud.ntm-it.server.state=状�?hud.ntm-it.server.compute=算力
+hud.ntm-it.server.compute_units=已连接计算单�?hud.ntm-it.server.compute_points=算力点数
+hud.ntm-it.server.heat=热量(TU)
+hud.ntm-it.server.members=一体化数量
+hud.ntm-it.server.status=运行状�?hud.ntm-it.server.status.no_fluid_type=未设定流体（用流体识别码设定�?hud.ntm-it.server.status.empty=输入罐为空（用容器右键或接管道灌入）
+hud.ntm-it.server.status.not_heatable=该流体无法被本机加热
+hud.ntm-it.server.status.heating_up=升温中（热量还不够）
+hud.ntm-it.server.status.output_full=输出罐已�?hud.ntm-it.server.status.boiling=正在加热
+hud.ntm-it.server.status.idle=待机
+hud.ntm-it.server.power=电力
+hud.ntm-it.server.in_fluid=输入流体
+hud.ntm-it.server.in=输入�?hud.ntm-it.server.out_fluid=输出流体
+hud.ntm-it.server.out=输出�?
+gui.ntm-it.server.rbmk.pos=X %s  Z %s
+
+gui.ntm-it.server.rbmk.slotempty=槽位是空的——请放入 RBMK 工具�?gui.ntm-it.server.rbmk.notlinked=这个工具还没连接任何方块（请对着 RBMK 控制台右键）�?gui.ntm-it.server.rbmk.baditem=本页读不了这个物品�?gui.ntm-it.server.rbmk.notconsole=%s 处不�?RBMK 控制台（%s）�?gui.ntm-it.server.rbmk.nocolumns=控制台没有报告任何柱体——请靠近一些或等待区块加载�?
+tile.ntm-it.rbmk_gauge_3x3.name=RBMK �Ǳ��̣�3x3��
+
+death.attack.ntmitLidAscend=%1$s 骑着顶盖去见上帝了
+death.attack.ntmitLidDescend=2000t 的盖子让 %1$s 感受到了动能
+
+advancements.ntmit.lid_launch.title=想飞上天和太阳肩并肩
+advancements.ntmit.lid_launch.description=被 RBMK 顶盖弹上天，然后在空中送命
+advancements.ntmit.lid_crush.title=达尔文奖得主
+advancements.ntmit.lid_crush.description=被 RBMK 顶盖砸死
+advancements.ntmit.digamma_zeroing.title=切尔§kDyatlov
+advancements.ntmit.digamma_zeroing.description=深渊在寻找着你，§kDyatlov已降临
+advancements.ntm-it.lid_launch.title=想飞上天和太阳肩并肩
+advancements.ntm-it.lid_launch.description=被 RBMK 顶盖弹上天，然后在空中送命
+advancements.ntm-it.lid_crush.title=达尔文奖得主
+advancements.ntm-it.lid_crush.description=被 RBMK 顶盖砸死
+advancements.ntm-it.digamma_zeroing.title=切尔§kDyatlov
+advancements.ntm-it.digamma_zeroing.description=深渊在寻找着你，§kDyatlov已降临
+
+# boiler steam gauge warnings
+gui.ntm-it.boiler.caution=注意
+gui.ntm-it.boiler.warning=警告

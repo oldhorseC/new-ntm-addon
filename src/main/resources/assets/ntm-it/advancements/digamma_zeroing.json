@@ -1,0 +1,23 @@
+{
+  "display": {
+    "icon": {
+      "item": "hbm:rbmk_fuel_drx"
+    },
+    "title": {
+      "translate": "advancements.ntmit.digamma_zeroing.title"
+    },
+    "description": {
+      "translate": "advancements.ntmit.digamma_zeroing.description"
+    },
+    "frame": "challenge",
+    "background": "minecraft:textures/blocks/stone.png",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "triggered": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

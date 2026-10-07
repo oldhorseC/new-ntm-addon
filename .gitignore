@@ -1,0 +1,45 @@
+# eclipse
+*.launch
+.settings
+.metadata
+.classpath
+.project
+# idea
+out
+*.ipr
+*.iws
+*.iml
+.idea
+
+# gradle
+build
+.gradle
+
+# other
+eclipse
+
+# 本地资料与第三方内容（不得上传）
+blueprint/
+libs/
+mods/
+extracted/
+block_png/
+create/
+bin/
+run/
+_workspace/
+.clinerules/
+.vscode/
+*.log
+*_log.txt
+run
+
+# dev-run logs (see "Workflow that saved time" in README.md)
+*.log
+build_out.txt
+
+# 开发素材（本地保留，不公开）
+FLUID_PRESSURE_PLAN.md
+MIXIN.md
+RULE.md
+SERVER_PLAN.md

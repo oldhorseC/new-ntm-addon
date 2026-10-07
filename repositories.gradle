@@ -1,0 +1,21 @@
+// Add any additional repositories for your dependencies here.
+// RetroFuturaGradle and the Buildscripts plugins are resolved by the pluginManagement block
+// in settings.gradle; this file only covers regular project dependencies.
+
+repositories {
+    maven {
+        name 'GTNH Maven'
+        url 'https://nexus.gtnewhorizons.com/repository/public/'
+    }
+
+    maven {
+        name 'Maven central'
+        url 'https://repo1.maven.org/maven2/'
+    }
+
+    // CurseMaven: uncomment if you start using `rfg.deobf("curse.maven:...")` dependencies.
+    // maven {
+    //     name 'CurseMaven'
+    //     url 'https://www.cursemaven.com'
+    // }
+}

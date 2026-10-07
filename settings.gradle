@@ -1,0 +1,32 @@
+pluginManagement {
+    repositories {
+        maven {
+            // RetroFuturaGradle
+            name 'GTNH Maven'
+            url 'https://nexus.gtnewhorizons.com/repository/public/'
+            //noinspection GroovyAssignabilityCheck
+            mavenContent {
+                includeGroup 'com.gtnewhorizons'
+                includeGroup 'com.gtnewhorizons.retrofuturagradle'
+            }
+        }
+        gradlePluginPortal()
+        mavenCentral()
+        mavenLocal()
+    }
+}
+
+plugins {
+    id 'com.diffplug.blowdryerSetup' version '1.7.1'
+    // Automatic toolchain provisioning
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.7.0'
+}
+
+blowdryerSetup {
+    repoSubfolder 'spotless'
+    github 'GregTechCEu/Buildscripts', 'tag', 'v1.0.7'
+}
+
+// NOTE: hardcoded on purpose. The default `rootProject.projectDir.getName()` would
+// resolve to "new mod" (the containing folder) and the space breaks task paths.
+rootProject.name = 'ntm-it'

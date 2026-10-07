@@ -1,0 +1,18 @@
+[
+  {
+    "modid": "${modid}",
+    "name": "${modname}",
+    "description": "An addon for HBM's Nuclear Tech - Community Edition.",
+    "version": "${version}",
+    "mcversion": "${mcversion}",
+    "logoFile": "",
+    "url": "",
+    "authorList": [],
+    "credits": "",
+    "parent": "",
+    "screenshots": [],
+    "dependencies": [
+      "required-after:hbm"
+    ]
+  }
+]

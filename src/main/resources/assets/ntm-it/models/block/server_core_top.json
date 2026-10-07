@@ -1,0 +1,22 @@
+{
+	"parent": "block/block",
+	"textures": {
+		"particle": "ntm-it:blocks/server_core_side",
+		"side": "ntm-it:blocks/server_core_side",
+		"top": "ntm-it:blocks/server_core_top"
+	},
+	"elements": [
+		{
+			"from": [0, 0, 0],
+			"to": [16, 16, 16],
+			"faces": {
+				"down": { "texture": "#side", "uv": [0, 0, 16, 16], "cullface": "down" },
+				"up": { "texture": "#top", "uv": [0, 0, 16, 16], "rotation": 180, "cullface": "up" },
+				"north": { "texture": "#side", "uv": [0, 0, 16, 16], "cullface": "north" },
+				"south": { "texture": "#side", "uv": [0, 0, 16, 16], "cullface": "south" },
+				"west": { "texture": "#side", "uv": [0, 0, 16, 16], "cullface": "west" },
+				"east": { "texture": "#side", "uv": [0, 0, 16, 16], "cullface": "east" }
+			}
+		}
+	]
+}

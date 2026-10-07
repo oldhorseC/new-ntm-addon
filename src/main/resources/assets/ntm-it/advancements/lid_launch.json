@@ -1,0 +1,23 @@
+{
+  "display": {
+    "icon": {
+      "item": "hbm:rbmk_lid"
+    },
+    "title": {
+      "translate": "advancements.ntmit.lid_launch.title"
+    },
+    "description": {
+      "translate": "advancements.ntmit.lid_launch.description"
+    },
+    "frame": "challenge",
+    "background": "minecraft:textures/blocks/stone.png",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "triggered": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

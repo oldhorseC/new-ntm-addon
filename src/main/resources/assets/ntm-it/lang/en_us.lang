@@ -1,0 +1,153 @@
+tile.ntm-it.test_block.name=Test Block
+itemGroup.tabITContent=IT内容
+chat.ntm-it.console_bind=NTM-IT console re-centred on %s, %s, %s
+tile.ntm-it.test_multiblock.name=IT Test Multiblock
+
+# server multiblock (SERVER_PLAN.md §8.2)
+tile.ntm-it.server_core.name=Server Core Unit
+tile.ntm-it.server_compute.name=Server Compute Unit
+tile.ntm-it.server_heat_exchanger.name=Server Heat Exchanger
+
+# server core screen (§7.1; the four gui.ntm-it.server.state.* keys arrive with the state machine in P2)
+gui.ntm-it.server.title=Server Control
+gui.ntm-it.server.tab.classes=Data Classes
+gui.ntm-it.server.tab.groups=Dispatch Groups
+gui.ntm-it.server.table.name=Name
+gui.ntm-it.server.table.type=Type
+gui.ntm-it.server.table.source=Source
+gui.ntm-it.server.table.period=Period
+gui.ntm-it.server.table.mode=Mode
+gui.ntm-it.server.table.targets=Targets
+gui.ntm-it.server.empty.classes=No data classes yet
+gui.ntm-it.server.empty.groups=No dispatch groups yet
+gui.ntm-it.server.power=Power: %s / %s
+gui.ntm-it.server.heat=Heat (TU): %s / %s
+tooltip.ntm-it.server.compute=Compute: %s / %s
+tooltip.ntm-it.server.cooling=Cooling: %s TU/t
+
+# guidance: item tooltips (§4.7)
+tooltip.ntm-it.server.column=Placed as a 3-cell column: the cell you place is the core, the two cells above it belong to the structure.
+tooltip.ntm-it.server.right_click=Right-click for the control screen, sneak-right-click for a status readout.
+tooltip.ntm-it.server.server_core.hint=Core unit: takes HE power on all six faces, runs the data classes and pays for them with heat.
+tooltip.ntm-it.server.server_core.faces=Front faces you. Compute units go on the two side faces, the heat exchanger goes behind.
+tooltip.ntm-it.server.server_compute.hint=Compute unit: adds compute points to the core it is attached to, and produces heat.
+tooltip.ntm-it.server.server_compute.faces=Front faces you. It attaches to the core through its two side faces, and the heat exchanger goes behind it.
+tooltip.ntm-it.server.server_heat_exchanger.hint=Heat exchanger: the unit that carries heat away. Put it next to a core or compute column and give it a fluid to boil.
+tooltip.ntm-it.server.server_heat_exchanger.faces=Any of its four horizontal sides works; the back of a column is where the design expects it. Touching exchangers act as one array. Coolant goes in through one tank and comes out of the other.
+
+# chat readout (sneak-right-click a core, §4.7)
+chat.ntm-it.server.status.head=Server core at %s, %s, %s
+chat.ntm-it.server.status.facing.north=Front: north (compute units on the sides, heat exchanger behind)
+chat.ntm-it.server.status.facing.south=Front: south (compute units on the sides, heat exchanger behind)
+chat.ntm-it.server.status.facing.west=Front: west (compute units on the sides, heat exchanger behind)
+chat.ntm-it.server.status.facing.east=Front: east (compute units on the sides, heat exchanger behind)
+chat.ntm-it.server.status.compute=Compute: %s / %s (connected compute units: %s)
+chat.ntm-it.server.status.heat=Heat: %s / %s, cooling %s TU/t from %s heat exchanger(s)
+chat.ntm-it.server.status.state.running=State: RUNNING - everything is fine
+chat.ntm-it.server.status.state.throttled=State: THROTTLED - at the heat ceiling, polling slower
+chat.ntm-it.server.status.state.halted=State: HALTED - too hot, or no power
+chat.ntm-it.server.status.state.under_power=State: UNDER POWER - not enough energy for the current load
+chat.ntm-it.server.status.power=Power: %s / %s HE
+chat.ntm-it.server.status.no_coolant=No usable coolant - the attached heat exchangers are idling.
+
+# screen: state line and help (§7.1)
+gui.ntm-it.server.state.running=RUNNING
+gui.ntm-it.server.state.throttled=THROTTLED
+gui.ntm-it.server.state.halted=HALTED
+gui.ntm-it.server.state.under_power=UNDER POWER
+gui.ntm-it.server.state.label=State: %s
+gui.ntm-it.server.no_coolant=No usable fluid - the input tank is empty, or its fluid cannot be boiled.
+gui.ntm-it.server.hint.column=Compute: sides, exchanger: back
+gui.ntm-it.server.hint.panel=HE power: any face
+gui.ntm-it.server.status.tip=Compute comes from the compute columns, cooling from the heat exchangers, heat from simply running. No power, or too much heat, halts the server. To read this machine in a control panel, link the core with the multi detonator and use a Query Block node (server.compute, server.heat, server.power, server.state, server.cooling).
+
+# The crosshair readout is HBM's own diagnostic dump (key: value lines), so it needs no lang keys.
+
+# battery slot and its NBT readout (§4.6)
+gui.ntm-it.server.battery.label=BAT
+gui.ntm-it.server.battery.empty=Put a battery here
+gui.ntm-it.server.nbt.none=This item carries no NBT
+gui.ntm-it.server.nbt.entry=%s = %s
+
+# crosshair readout labels (§4.7); the keys match the identifiers the tile entities publish
+# ---- server connector (item, §5.2)
+item.ntm-it.server_connector.name=NTM-IT Server Connector
+item.ntm-it.server_connector.desc=Sneak and right-click a device to record its position,$type and data class enum
+item.ntm-it.server_connector.bound=Bound to %s, %s, %s - the device offers %s data classes
+item.ntm-it.server_connector.nodevice=That block offers no data classes
+item.ntm-it.server_connector.nofields=That device is not offering anything right now
+item.ntm-it.server_connector.unbound=Connector is not bound - sneak and right-click a device
+
+hud.ntm-it.server.title=Server Unit Status
+gui.ntm-it.server.mode.collect=Collect
+gui.ntm-it.server.mode.dispatch=Dispatch
+hud.ntm-it.server.state=State
+hud.ntm-it.server.compute=Compute
+hud.ntm-it.server.compute_units=Compute units
+hud.ntm-it.server.compute_points=Compute points
+hud.ntm-it.server.heat=Heat (TU)
+hud.ntm-it.server.members=Array size
+hud.ntm-it.server.status=Status
+hud.ntm-it.server.status.no_fluid_type=No fluid set (use a fluid identifier)
+hud.ntm-it.server.status.empty=Input tank is empty (fill it with a container or a duct)
+hud.ntm-it.server.status.not_heatable=This fluid cannot be heated by this machine
+hud.ntm-it.server.status.heating_up=Warming up (not enough heat yet)
+hud.ntm-it.server.status.output_full=Output tank is full
+hud.ntm-it.server.status.boiling=Boiling
+hud.ntm-it.server.status.idle=Idle
+hud.ntm-it.server.power=Power
+hud.ntm-it.server.in_fluid=Input fluid
+hud.ntm-it.server.in=Input
+hud.ntm-it.server.out_fluid=Output fluid
+hud.ntm-it.server.out=Output
+
+# steam-water mixture fluids (RBMK boiler output)
+fluid.wetsteam=Steam-Water Mixture
+fluid.hbmfluid.wetsteam=Steam-Water Mixture
+fluid.wetsteam_hot=Hot Steam-Water Mixture
+fluid.hbmfluid.wetsteam_hot=Hot Steam-Water Mixture
+fluid.wetsteam_superhot=Superheated Steam-Water Mixture
+fluid.hbmfluid.wetsteam_superhot=Superheated Steam-Water Mixture
+fluid.wetsteam_ultrahot=Ultra-Dense Steam-Water Mixture
+fluid.hbmfluid.wetsteam_ultrahot=Ultra-Dense Steam-Water Mixture
+
+# steam drum (steam-water separator)
+tile.ntm-it.steam_drum.name=Steam Drum
+tooltip.ntm-it.steam_drum.hint=Separates a steam-water mixture into dry steam and water. Feed it the mixture your RBMK boilers make; it costs no power.
+tooltip.ntm-it.steam_drum.ports=Ports: bottom = mixture in, top = dry steam out, both ends = water out.
+hud.ntm-it.steam_drum.status.no_mixture=Not a steam-water mixture
+hud.ntm-it.steam_drum.status.empty=Input tank is empty
+hud.ntm-it.steam_drum.status.output_full=Output tank is full
+hud.ntm-it.steam_drum.status.separating=Separating
+hud.ntm-it.steam_drum.status.idle=Idle
+
+gui.ntm-it.server.rbmk.pos=X %s  Z %s
+
+gui.ntm-it.server.rbmk.slotempty=The slot is empty - put an RBMK tool in it.
+gui.ntm-it.server.rbmk.notlinked=This tool is not linked to any block yet (right-click an RBMK console).
+gui.ntm-it.server.rbmk.baditem=This item cannot be read here.
+gui.ntm-it.server.rbmk.notconsole=%s is not an RBMK console (%s).
+gui.ntm-it.server.rbmk.nocolumns=The console reports no columns - stand closer or let the chunk load.
+
+# RBMK gauge (3x3)
+tile.ntm-it.rbmk_gauge_3x3.name=RBMK Gauge (3x3)
+death.attack.ntmitLidAscend=%1$s rode the lid plate straight to meet their maker
+death.attack.ntmitLidDescend=A 2000t lid plate let %1$s feel the kinetic energy
+
+advancements.ntmit.lid_launch.title=Shoulder to Shoulder with the Sun
+advancements.ntmit.lid_launch.description=Get launched skywards by an RBMK lid plate, and die up there
+advancements.ntmit.lid_crush.title=Darwin Award Winner
+advancements.ntmit.lid_crush.description=Get crushed to death by an RBMK lid plate
+advancements.ntmit.digamma_zeroing.title=Chernobyl§kDyatlov
+advancements.ntmit.digamma_zeroing.description=The abyss is looking for you, §kDyatlov has arrived
+advancements.ntm-it.lid_launch.title=Shoulder to Shoulder with the Sun
+advancements.ntm-it.lid_launch.description=Get launched skywards by an RBMK lid plate, and die up there
+advancements.ntm-it.lid_crush.title=Darwin Award Winner
+advancements.ntm-it.lid_crush.description=Get crushed to death by an RBMK lid plate
+advancements.ntm-it.digamma_zeroing.title=Chernobyl§kDyatlov
+advancements.ntm-it.digamma_zeroing.description=The abyss is looking for you, §kDyatlov has arrived
+
+
+# boiler steam gauge warnings
+gui.ntm-it.boiler.caution=Caution
+gui.ntm-it.boiler.warning=Warning

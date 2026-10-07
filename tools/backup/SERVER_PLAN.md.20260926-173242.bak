@@ -1,0 +1,1301 @@
+# NTM-IT 服务器多方块 —— 设计与实施纲要（SERVER_PLAN）
+
+> 本文件是「服务器」多方块系统的设计定稿与实施纲要。
+> 所有关于 HBM 的结论均来自对 `D:\Hbm-s-Nuclear-Tech-CE-1.0.0.0\src\main\java\com\hbm\` 的源码阅读，
+> 并标注 `文件:行号`，便于实施时复核。
+> 相关材料：`D:\Hbm-s-Nuclear-Tech-CE-1.0.0.0\MESSAGE.md`（HBM 机制分析档案）、本工程 `README.md`（构建环境）。
+
+---
+
+## 0. 文档说明
+
+### 0.1 术语表
+
+| 术语 | 含义 |
+|---|---|
+| 单元 / 柱 | 一个 **1×3×1** 的 dummyable 多方块：核心格在底、中间假块、顶格 extra |
+| 服务器核心单元 | `ntm-it:server_core`，主控：数据类注册表、轮询、派发、GUI、接电、产热 |
+| 服务器计算单元 | `ntm-it:server_compute`，算力模块 |
+| 服务器热交换器 | `ntm-it:server_heat_exchanger`，散热模块（消耗 COOLABLE 流体） |
+| TU | HBM 热量单位（`int`），契约见 `IHeatSource` |
+| HE | HBM 能源单位（`long`），契约见 `IEnergyHandlerMK2` |
+| 数据类 DataClass | 玩家在核心单元 GUI 注册的具名数据项（源 + 字段 + 聚合算子 + 周期） |
+| 源 Source | 数据类读取的对象：任意 `IControllable` 坐标 / RBMK 控制台 / 内建量 |
+| 自由发送 Dispatch | 核心单元把 `ControlEvent` 广播到任意目标集合 |
+| FACING / BACK / SIDE | 柱的朝向面 / 背面 / 与 FACING 垂直的两个侧面 |
+| 接力检测 | 已连接的计算单元用自己的 FACING 继续检测下一批计算单元 |
+| 降级路径 | 路径 1 = 纯公开 API；路径 2 = 依赖 Mixin 的增强功能 |
+
+### 0.2 阅读顺序
+
+- 要动手写代码：§9（阶段）→ §4（结构）→ §5/§6（数据与接口）→ §7（GUI/网络）
+- 要评估风险：§2（可行性）→ §11（风险与 ADR）
+- 要查 HBM 的某个行为在哪：§12 附录 D（file:line 速查）
+
+### 0.3 证据约定
+
+- 文中 `文件:行号` 一律相对 `D:\Hbm-s-Nuclear-Tech-CE-1.0.0.0\src\main\java\com\hbm\`（另注者除外）。
+- 「✅ 已验证」= 规划期间实际打开源码或字节码确认；「📌 待验证」= 实施时须先跑一次确认。
+- 凡是"结论"必须带证据；凡是没有证据的写法一律降级为「📌 待验证」。
+
+## 1. 需求与非目标
+
+### 1.1 需求（定稿）
+
+**R1. 模块化柱式结构。** 三个单元，每个都是 **1×3×1** 柱体（x=1, y=3, z=1），仿 RBMK 反应堆柱式架构：
+`ntm-it:server_core`（服务器核心单元）、`ntm-it:server_compute`（服务器计算单元）、
+`ntm-it:server_heat_exchanger`（服务器热交换器）。三者可独立放置，不要求同时存在。
+
+**R2. 相邻组网（面定向）。**
+
+| 编号 | 规则 |
+|---|---|
+| R2.1 | 核心单元检测**与 FACING 垂直的面（SIDE，共 2 面）**相邻的**计算单元** → 决定算力 |
+| R2.2 | **已连接**的计算单元用**自己的 FACING** 接力检测其 SIDE 面；一个核心单元最多计入 **4** 个计算单元 |
+| R2.3 | **上限 `computeSlots` 是变体数据**（不同变体可以不同），不得写成编译期常量 |
+| R2.4 | 核心单元与**每个已连接的计算单元**检测自己的 **BACK 面**相邻的**热交换器** → 决定 TU 交给谁 |
+
+**R3. 热能沿用 HBM 原生体系。** TU 走 `IHeatSource` 契约；传热用 HBM 的 `diffusion` 热系数写法；
+热交换器可消耗 **HBM 所有带 `FT_Coolable`（COOLER 属性）的流体**，参数来自流体特性系统而非硬编码。
+
+**R4. 电力沿用 HBM 原生体系。** 核心单元可通过 **bottom / top / side（六面）** 输入 HE，
+实现 `IEnergyReceiverMK2`，并保留 Forge Energy（FE）兼容。
+
+**R5. 控制面板整合（双生态）。**
+- R5.1 玩家在核心单元 GUI 注册的**数据类**，必须能在控制面板的**编程界面**里被选中读取；
+- R5.2 数据类由核心单元的**轮询引擎**周期采集并聚合，面板侧只读缓存快照；
+- R5.3 与 RBMK 控制台生态兼容（可读其 15×15 列数据做聚合）。
+
+**R6. 自由方式发送。** 核心单元能把事件广播到**任意目标**（不局限于面板直接绑定的设备）。
+
+**R7. OpenComputers 兼容。** 核心单元作为 OC 组件暴露数据类读写、轮询控制与派发。
+
+**R8. 手感一致。** 扳手 / 多目标引爆器绑定、GUI 交互、区块卸载安全、拆柱回收规则与 HBM 一致。
+
+### 1.2 非目标（一期不做，列入 §13 路线）
+
+| 编号 | 非目标 | 说明 |
+|---|---|---|
+| N1 | 不新增控制面板**控件类型** | `ControlRegistry` 注入留二期，见 §11 ADR-4 |
+| N2 | 不做 TESR | 柱体全部走 baked model；若 §11 ADR-1 被推翻再评估 |
+| N3 | 不做跨维度轮询 / 派发 | 目标必须同世界 |
+| N4 | 不改 HBM 本体 jar | 只用公开 API + Mixin（§2.2） |
+| N5 | 不做结构损坏 / 爆炸机制 | 组网失效只降级为"未连接"状态 |
+
+### 1.3 硬约束（来自现有工程）
+
+- **C1** MC 1.12.2 / Forge 14.23.5 / RetroFuturaGradle 1.4.9 / Buildscripts v1.0.7 / Jabel（`--release 8`）。
+- **C2** 构建环境约束见 `README.md`：Gradle 守护进程 JVM 必须等于编译 toolchain（本机 JDK 17），
+  用户目录非 ASCII，`org.gradle.java.installations.paths` 不得跨行。
+- **C3** HBM 不发布 API jar（`customMavenPublishUrl` 为空）→ 只能依赖完整 dev jar
+  `libs/NTM-CE-1.12.2-1.0.0.0-dev.jar`，且每次 HBM 更新必须重新拷贝。
+- **C4** 本工程已有内容不得回归：`test_block`（控制台克隆）与 `test_multiblock`（手写 1×3×1）
+  必须继续可用；新方块注册进同一个 `ModBlocks` 与「IT内容」创造标签。
+
+## 2. 可行性：扩展点与限制
+
+### 2.1 纯 API 扩展点（不需要 Mixin；✅ 全部已验证）
+
+| 需求 | 扩展点 | 证据 / 说明 |
+|---|---|---|
+| 被面板查询数据 | `IControllable.getQueryData()` | `inventory/control_panel/IControllable.java:15`；`NodeQueryBlock` 用它填下拉并求值 |
+| 被面板绑定 | `SubElementLinker`（多目标引爆器） | `SubElementLinker.java:101-115`：`BlockDummyable.findCore` → `TileEntityDummy.target` → `instanceof IControllable` 才入 `linked` |
+| 注册新事件类型 | `ControlEvent.register(...)`（`REGISTRY` 是 `public static`） | `ControlEvent.java:11,86-88`；未注册名会让 `getRegisteredEvent` 抛 `RuntimeException`（`:79-84`） |
+| 事件出现在面板 UI | 设备的 `getInEvents()` / `getOutEvents()` | `SubElementEventEditor.java:45-91` 遍历控件 + 全部 linked 设备 |
+| 接收面板写入 | `IControlReceiver.receiveControl(NBTTagCompound)` | `interfaces/IControlReceiver.java:10-17` |
+| 客户端→服务端 GUI 包（**免写包**） | `com.hbm.packet.toserver.NBTControlPacket`（public） | `NBTControlPacket.java:86-91` 已做 `instanceof IControlReceiver` + `hasPermission` 校验 |
+| 打开 GUI | `IGUIProvider` + 本工程 `ModGuiHandler` | `tileentity/IGUIProvider.java:11-16`；本工程 console 用 id 0，新加 `ID_SERVER = 1` |
+| 服务端→客户端同步 | `getUpdatePacket` / `getUpdateTag` / `onDataPacket` | `TileEntityControlPanel.java:166-179` 范式 |
+| TU 产出与消耗 | `IHeatSource`：`getHeatStored()` / `useUpHeat(int)` | `api/tile/IHeatSource.java:3-12`（注释要求实现方防负） |
+| 传热写法（热系数） | `diffusion` 字段 + `Math.ceil(diff * diffusion)` | `TileEntityMachineCoker.java:192-215`、`TileEntitySawmill.java:212-226` |
+| 冷却介质（COOLER 属性） | `FT_Coolable`：`hasTrait/getTrait`，`coolsTo`/`amountReq`/`amountProduced`/`heatEnergy` | `inventory/fluid/trait/FT_Coolable.java:18-21,37-40,55-57`；`CoolingType = {TURBINE, HEATEXCHANGER}` |
+| 冷却消费写法 | `getEfficiency(CoolingType)` + `tanks[1].setTankType(trait.coolsTo)` | `TileEntityMachineTurbine.java:129-133`、`TileEntityMachineSteamEngine.java:110-113` |
+| 流体存储/接口 | `FluidTankNTM` + `IFluidStandardReceiverMK2/SenderMK2` | 详见 `MESSAGE.md` §4 |
+| 接电 | `IEnergyReceiverMK2`（`transferPower`/`getReceiverSpeed`/`trySubscribe`/`getPriority`） | `api/energymk2/IEnergyReceiverMK2.java:27-134` |
+| 面级接入开关 | `IEnergyConnectorMK2.canConnect(ForgeDirection)`（默认六面全通） | `IEnergyConnectorMK2.java:13-15` |
+| 电力三件套（必须自己实现） | `getPower()` / `setPower(long)` / `getMaxPower()` | `IEnergyHandlerMK2.java:11-13`（注释 DO NOT USE DIRECTLY） |
+| FE↔HE 免费桥接 | `TileEntityMachineBase` 的 `enableEnergyWrapper` | `TileEntityMachineBase.java:37,242-279,283-291`；`capability/NTMEnergyCapabilityWrapper.java:19-43`；换算率 `GeneralConfig.conversionRateHeToRF` |
+| `ILoadedTile` 契约 | `TileEntityLoadedBase implements ILoadedTile` | `tileentity/TileEntityLoadedBase.java:13,19-20` |
+| OpenComputers 组件 | `CompatHandler.OCComponent` | `handler/CompatHandler.java:206-252`（`getComponentName`/`canConnectNode`/`methods`/`invoke`）；依赖已是 `compileOnly` |
+| 多方块骨架 | `BlockDummyable` + `MultiblockHandlerXR` | 见 §4.2 / §4.8 |
+| 创造标签 | 本工程 `TabITContent`（`itemGroup.tabITContent`） | 新方块直接放进现有标签 |
+
+**关键实现细节（可直接抄的范式）**
+
+- 机器接电的标准骨架：`TileEntityMachineAssemblyMachine`（tile）——
+  `public long power; public long maxPower = 100_000;`（`:53-54`）、
+  `DirPos[] getConPos()`（`:215-222`）、`update()` 内 `for(DirPos p : getConPos()) this.trySubscribe(world, p);`（`:104-105`）。
+- 面板查询节点的取值路径：`NodeQueryBlock.setDataSelector()`（`:52-63`）读 `te.getQueryData().entrySet()`，
+  `evaluate()`（`:82-97`）按 `dataName` 取值 → **键名即数据类名**。
+- 面板事件列表的来源：`SubElementEventEditor.accumulateEventTypes()`（`:45-91`），
+  对每个名字调 `ControlEvent.getRegisteredEvent(name)` → 我们的自定义事件必须先注册。
+
+### 2.2 Mixin 扩展点清单
+
+> 前提：MixinBooter 作为前置（见 §2.4）。以下目标均已✅确认存在且为硬编码结构。
+
+| ID | 目标 | 目的 | 侧 | 失败时的降级 |
+|---|---|---|---|---|
+| **M1** | `inventory/control_panel/nodes/Node#nodeFromNBT`（`:79-125`，硬编码 `switch`） | 增加 `ntmit_server_query` / `ntmit_server_dispatch` 两个分支 | 双端 | 路径 1 仍可用：数据类照旧出现在现有 `Query Block` 节点的下拉里 |
+| **M2** | `inventory/control_panel/SubElementNodeEditor#keyTyped`（客户端，`:87-140` 硬编码 `ItemList` 菜单） | 在添加菜单插入我们的节点项 | 客户端 | 用户仍可编辑既有节点；新节点只能用"复制已有节点 NBT"方式造出来（不推荐） |
+| **M4** | `inventory/control_panel/NodeSystem#readFromNBT`（`:107-139`） | 未知节点返回占位对象而非 `null`，防 NPE | 双端 | 仅在装了本模组时有保护作用（见 §2.3 L5） |
+| **M3** | `ControlRegistry` 私有 `classToName`（`:14`）与 `init()`（`:19-44`） | **二期**：注入自定义面板控件类型 | 双端 | 二期功能 |
+| **M5** | `tileentity/machine/rbmk/TileEntityRBMKConsole`（`:43`） | **二期候选**：让其实现 `IControllable`，取代一期"特例直读"（§6.4） | 双端 | 一期用直读，功能不受影响 |
+| **M6** | `nodes/NodeQueryBlock#setDataSelector`（`:52-63`） | 可选：下拉分组、强制刷新 | 客户端 | 一般不需要，`getQueryData()` 已足够 |
+
+**明文禁止**：不要尝试用 Mixin 给 `NodeType` 枚举增加值（1.12.2 枚举注入极脆）。我们的节点复用
+`NodeType.INPUT` / `NodeType.OUTPUT` 以取得配色与语义。
+
+### 2.3 残余限制（Mixin 也解决不了 / 不该解决）
+
+| ID | 限制 | 证据 | 对策 |
+|---|---|---|---|
+| **L1** | 元数据只有 4 bit：`META` 是 `PropertyInteger(0,15)`，`offset=10`、`extra=6`；语义为 `0-5` 假块朝向、`6-11` extra、`12-15` 核心 | `BlockDummyable.java:58,79-88` | 柱的形状只能靠"核心 + 方向假块 + 顶格 extra"三档表达（§4.2） |
+| **L2** | 基类渲染是关闭的：`INVISIBLE` + `isOpaqueCube=false` + `shouldSideBeRendered=false` | `BlockDummyable.java:401-404,406-409,425-428` | 三个方法逐一覆写（§4.5） |
+| **L3** | 基类 `bakeModel` 会把 `<name>#normal` 烤成 `block/cube_all` + `hbm:blocks/block_steel`，`#inventory` 烤成指向不存在贴图的 `item/generated`；`ModelBakeEvent` 时对 `IDynamicModels.INSTANCES` 无条件执行 | `BlockDummyable.java:541-569`、`ModEventHandlerClient.java:445`、`items/IDynamicModels.java:28-33,46-57` | **必须用 3 参构造** `(Material.IRON, name, true)`（`:70-77`）绕开 INSTANCES 与 `ModBlocks.ALL_BLOCKS` |
+| **L4** | 竖直结构没有"竖向朝向"：`findCoreRec` 靠"`meta-6` 越界 → `ForgeDirection.UNKNOWN`"识别核心，故核心 meta 只能取 `12-15`（四向水平）或 `10-11`（UP/DOWN，且与 extra 冲突） | `BlockDummyable.java:152-178,160-168` | 柱**只用水平朝向**；禁止竖放朝向 |
+| **L5** | 面板存档前向兼容：面板 NBT 里含我们的节点类型而本模组被移除时，基类对未知 `nodeType` 返回 `null`，随后 `NodeSystem#readFromNBT` NPE | `nodes/Node.java:79-125`、`NodeSystem.java:113-129` | M4 只在本模组存在时有效；发布说明必须警告；提供清理指引 |
+| **L6** | `ControlEventSystem#removeControllable` 对未注册事件名 `get(s)` 可能 NPE | `ControlEventSystem.java:39-48`（危险行 `:45`） | 我们的 `getInEvents()` 必须与 `receiveEvent` 接受集合**严格一致且运行期不变** |
+| **L7** | `getReceiverSpeed()` 默认返回 `getMaxPower()` → 单 tick 可能瞬时巨功率 | `IEnergyReceiverMK2.java:44-47`；`MESSAGE.md` §6.8-4 | 必须覆写为受限值 |
+| **L8** | `NodeQueryBlock.evaluate()` 每个 tick 都被调用 | `NodeQueryBlock.java:82-97` | `getQueryData()` 只能返回缓存快照，绝不可发起真实轮询 |
+| **L9** | `EventBusSubscriber` 的 `ControlEventSystem.tick` 只对订阅了 `tick` 的设备广播，且 `systems` 是静态 `HashMap` | `ControlEventSystem.java:16,133-141` | 不要依赖 tick 事件做重活；轮询在 TE 自己的 `update()` 里做 |
+
+### 2.4 Mixin 层工程规范（本工程定稿）
+
+**B1. `gradle.properties` 改动**
+
+```properties
+usesMixins = true
+mixinsPackage = mixin
+mixinProviderSpec = curse.maven:mixin-booter-419286:7049694
+forceEnableMixins = false
+generateMixinConfig = true
+```
+
+| 项 | 依据 |
+|---|---|
+| `usesMixins = true` | 当前为 `false`；开启后 Buildscripts 才会接上 Mixin 编译链 |
+| `mixinsPackage = mixin` → `com.ntmit.mixin` | 必须建好该包目录，否则**配置期**直接抛 `GradleException`（`build.gradle:153-162`） |
+| **必须覆盖 `mixinProviderSpec`** | Buildscripts 默认 `zone.rong:mixinbooter:10.6`（`build.gradle:85`）在 GTNH Nexus `public` 仓库**不存在**（Nexus REST 搜索返回 `items: []`，已验证）。HBM 用的坐标是 `curse.maven:mixin-booter-419286:7049694`（`dependencies.gradle:59`），**该 jar 已在本地 Gradle 缓存**，可离线解析 |
+| `generateMixinConfig = true` | 自动生成 `src/main/resources/mixins.ntm-it.json`（`build.gradle:706-716`） |
+
+**B2. 生成物 `src/main/resources/mixins.ntm-it.json`**（由 Buildscripts 的 `generateAssets` 任务生成，
+**仅在 `processResources`/`build` 时触发，`compileJava` 不会生成它**；人工负责往 `mixins`/`client` 数组里填类名）
+
+实际生成内容（✅ 已实测）：
+```json
+{
+  "package": "com.ntmit.mixin",
+  "refmap": "mixins.ntm-it.refmap.json",
+  "target": "@env(DEFAULT)",
+  "minVersion": "0.8",
+  "compatibilityLevel": "JAVA_8",
+  "mixins": [],
+  "client": [],
+  "server": []
+}
+```
+
+> **M2 是客户端 GUI 注入 → 必须填进 `client` 数组**，否则按 `defaultRequire` 语义在服务端当空操作、客户端不生效。
+> `minVersion = 0.8` 与本机 MixinBooter 10.7 内含的 Mixin 0.8.7 相容。
+
+
+**B3. 依赖链（由 Buildscripts 自动完成）**
+
+`usesMixins = true` 时自动追加 `api(mixinProviderSpec)` + `annotationProcessor(mixinProviderSpec)`
+（`build.gradle:523-537`；其中 `modUtils.enableMixins(spec, refmap)` 负责把 refmap 接上）。
+
+**MixinBooter 10.7 的 jar 内完整包含 `org.spongepowered.asm.*`**（已解包确认存在
+`org/spongepowered/asm/mixin/Mixin.class`、`IMixinConfigPlugin.class`、`bridge/RemapperAdapterFML.class`），
+因此 `@Mixin` 可直接编译。
+
+**B4. 运行期前置（必须在发布说明里写清）**
+
+- MixinBooter jar 事实（已解包）：`mcmod.info` → `modid = mixinbooter`、`version = 10.7`、`mcversion = 1.12.2`；
+  manifest → `TweakClass: org.spongepowered.asm.launch.MixinTweaker`、
+  `FMLCorePlugin: zone.rong.mixinbooter.MixinBooterPlugin`、`FMLCorePluginContainsFMLMod: true`。
+- **HBM 本体不保证它**：HBM 的 `src/main/resources/mcmod.info` 的 `dependencies` **只有** `mod_MinecraftForge`；
+  MixinBooter 在 HBM 的 `dependencies.gradle:59` 是 `runtimeOnlyNonPublishable`（**仅 dev 运行时**，
+  注释还写着 "Don't forget to restore these if you tweaked the runtime mods"）。
+- 因此：`NTMITMod.DEPENDENCIES` 必须改为
+  `"required-after:hbm;required-after:mixinbooter"`。
+
+**B5. 目标选择原则**
+
+1. **只注入 HBM 自有类**——HBM 类在发布 jar 里是 MCP 名，**不需要 refmap**；
+2. 避免触碰 vanilla / MC 成员；若必须，则依赖 Buildscripts 生成的 refmap；
+3. 每条 Mixin 必须**失败可降级**（见 §2.2 降级列），不允许"失败即崩服"。
+
+**B6. 调试与验收**
+
+`usesMixins = true` 时 Buildscripts 自动加
+`-Dmixin.hotSwap=true -Dmixin.checks.interfaces=true -Dmixin.debug.export=true`（`build.gradle:370-376`）
+→ 注入后的 class 导出到 `run/.mixin.out`，这是 **P0.5 的验收依据**。
+
+**B7. 代码规范**
+
+- 包固定 `com.ntmit.mixin`；每个目标一个类，命名 `Mixin<Target>`；
+- 注解用 `@Mixin(value = Target.class, remap = false)`（HBM 类非 SRG 名，`remap = false` 更稳）；
+- 注入点优先 `@Inject(at = @At("RETURN"), cancellable = true)` 改写返回值，避免 `@Overwrite`；
+- 在 `preInit` 注册自定义事件与数据类之后才允许 TE `validate()`（见 §2.3 L6）。
+
+## 3. 总体架构
+
+### 3.1 分层
+
+```
+┌── 接口层：外部如何访问 ────────────────────────────────────────────────┐
+│  A. 控制面板：  IControllable.getQueryData()   ← 现有 Query Block 节点（路径 1）
+│                 getInEvents()/getOutEvents()   ← 现有事件编辑器
+│                 [路径 2] 自定义节点 Server Query / Server Dispatch（M1+M2）
+│  B. RBMK 控制台：特例直读 TileEntityRBMKConsole.columns[]（§6.4）
+│  C. OpenComputers：CompatHandler.OCComponent + @Callback
+├── 数据层：轮询与注册表 ────────────────────────────────────────────────┤
+│  DataClassRegistry（玩家在 GUI 注册：名/类型/源/字段/算子/周期/启用）
+│  SourceAdapter（IControllable 适配器 / RBMK 控制台适配器 / 内建源）
+│  PollEngine（分桶周期轮询 → 失效剔除 → 聚合 → 写入缓存快照）
+│  Cache: Map<String, DataValue>（只读，供 getQueryData() 暴露）
+├── 传输层：往外发 ─────────────────────────────────────────────────────┤
+│  自定义事件注册（ControlEvent.register，preInit 期）
+│  Dispatch：ControlEventSystem.broadcastEvent(from, evt, positions)
+│  目标集合解析：静态坐标表 / 组网源集合 / 轮询组成员
+└───────────────────────────────────────────────────────────────────────┘
+           ↑ 资源侧（HBM 原生）  ↓
+   IHeatSource(TU)   FT_Coolable 流体   IEnergyReceiverMK2(HE) + FE(自动桥接)
+```
+
+### 3.2 三条关键时序
+
+**S1 —— 面板读取数据类（服务端，由面板 tick 事件驱动）**
+
+```
+面板 control 的 receiveNodeMap["tick"] 触发
+  → NodeQueryBlock.evaluate()（每个 tick 调用，NodeQueryBlock.java:82-97）
+    → 服务器核心单元 TE.getQueryData()        ← 只读缓存，O(键数)
+      → 返回 Map<String, DataValue> 快照
+```
+
+**S2 —— 轮询引擎（服务端，由核心单元自己的 `update()` 驱动，与面板解耦）**
+
+```
+TileEntityITServerCore.update()
+  → 电力检查（getPower 足够？）→ 不足则降频；为 0 则暂停
+  → 散热检查（heat < maxHeat？）→ 过热则降频
+  → 按 pollPeriod 分桶，取本轮到期的 DataClass
+    → SourceAdapter.read(...)：world.getTileEntity(pos) → IControllable.getQueryData()/RBMK 直读
+      → 聚合算子（AVG/SUM/MIN/MAX/COUNT/LAST）
+        → 写 cache；值变化则 markDirty()（不广播，面板自己来读）
+```
+
+**S3 —— 自由发送（服务端）**
+
+```
+触发源之一：
+  (a) 面板把事件发给核心单元（核心在 getInEvents() 里声明了 ntmit_server_dispatch）
+  (b) 核心单元自己在轮询中发现条件成立（预留）
+  (c) OpenComputers 调用 dispatch 方法
+  → 解析目标集合 → 构造 ControlEvent（ControlEvent.newEvent 要求已注册）
+    → ControlEventSystem.get(world).broadcastEvent(this.pos, evt, positions)
+      → 每个目标必须是注册了该事件名的 IControllable（IControllable 语义）
+```
+
+### 3.3 降级矩阵（Mixin 不可用 / 目标失配时的行为）
+
+| 场景 | 路径 1（API） | 路径 2（Mixin） | 结果 |
+|---|---|---|---|
+| 一切正常 | ✅ | ✅ | 全部功能 |
+| MixinBooter 缺失 | ❌ 模组根本不加载（`required-after:mixinbooter`） | ❌ | 安装说明缺失前置；这是**唯一**的硬失败点，必须写进发布说明 |
+| Mixin 应用失败（HBM 升级改了签名） | ✅ 数据类仍可在 `Query Block` 节点读 | ❌ 自定义节点消失 | 服务器本体、轮询、派发、OC 全部可用；仅少两个节点 |
+| 面板存档含我们的节点、模组被移除 | — | — | NPE（见 §2.3 L5），发布说明必须警告 |
+| 组网邻居被拆 | ✅ | ✅ | 算力/散热重算，降级为"未连接"；不损坏、不爆炸 |
+| 电力/散热不足 | ✅ | ✅ | 轮询降频 → 暂停，GUI 与 OC 暴露状态位 |
+
+## 4. 三单元柱式结构
+
+### 4.1 三单元职责与容量模型
+
+| 单元 | 注册名 | 职责 | 提供的量 | 消耗 |
+|---|---|---|---|---|
+| 服务器核心单元 | `server_core` | 主控：数据类注册表、轮询引擎、派发、GUI、接电、产热 | `computeSlots`（可挂计算单元数，默认 4）、数据类上限、轮询频率上限 | HE（每 tick）、产生 TU |
+| 服务器计算单元 | `server_compute` | 算力模块 | `compute`（算力点数）、自身 `coolSlots` | 产生 TU（由核心或自身结算） |
+| 服务器热交换器 | `server_heat_exchanger` | 散热模块 | 从 BACK 面邻居抽 TU 的能力（受 `diffusion` 与流体效率限制） | COOLABLE 流体 |
+
+**容量公式（定稿）**
+
+```
+computeUnits      = 核心单元按 §4.4 接力检测得到的计算单元列表（≤ computeSlots）
+compute           = Σ(每个计算单元的 computePoints)          // 变体数据
+dataClassLimit    = coreBaseSlots + compute * classesPerPoint
+pollIntervalFloor = coreBaseInterval - compute * intervalPerPoint   // 有下限，禁止 0
+coolingPerTick    = Σ(每个已连接换热器的当前散热速率)         // 见 §4.6
+heatPerTick       = coreIdleHeat + Σ(激活轮询任务 * heatPerTask)
+```
+
+状态机（服务端每 tick 求值）：
+
+```
+if (heat >= maxHeat)          state = THROTTLED   // 轮询周期 ×4，仍在散热
+if (heat >= maxHeat * 1.5)    state = HALTED      // 暂停轮询，等待散热
+if (power < costPerTick)      state = UNDER_POWER // 降频；power == 0 → HALTED
+else                          state = RUNNING
+```
+
+> 所有数值（`computeSlots`/`computePoints`/`classesPerPoint`/`coreBaseSlots`/`intervalPerPoint`/
+> `coreIdleHeat`/`heatPerTask`/`maxHeat`/`maxPower`）都是**变体/配置数据**，不得散落为魔法数字；
+> 一期放在 `TileEntityITServerCore` 的静态常量 + `server.cfg` 可覆盖（见 §11 ADR-6）。
+
+### 4.2 柱几何与元数据
+
+| 项 | 取值 | 依据 |
+|---|---|---|
+| 柱总高 | **3**（核心格 1 + 中间假块 1 + 顶格 extra 1） | 需求 R1 |
+| `getDimensions()` | `{2, 0, 0, 0, 0, 0}`（`{U,D,N,S,W,E}`，仅向上 2 格） | `BlockDummyable.java:445`、`MultiblockHandlerXR.java:13-15` |
+| `getOffset()` | `0` | 同 `RBMKBase.java:56-59` |
+| `getHeightOffset()` | `0`（保持默认） | `BlockDummyable.java:448-450` |
+| `getDirModified(dir)` | **返回玩家的水平朝向**（不像 `RBMKBase.java:137-140` 那样返回常量） | 使柱拥有 FACING → 才能定义 BACK/SIDE（§2.3 L4） |
+
+**元数据分配表**（照抄 dummyable 语义，实测推导）
+
+| 格 | 角色 | meta 计算 | 实际取值 | `createNewTileEntity(world, meta)` 返回 |
+|---|---|---|---|---|
+| 底 | 核心 | `dir.ordinal() + offset(10)`，`dir ∈ {NORTH, SOUTH, WEST, EAST}` | `12 / 13 / 14 / 15` | 该单元自己的 TE（`TileEntityITServerCore` / `…Compute` / `…HeatExchanger`） |
+| 中 | 假块 | `fillSpace` 用"核心→该格"方向：UP | `1` | `null`（合法，规避 `TileEntityDummy.update()` 的 `IMultiBlock` 检查，`TileEntityDummy.java:24-26`） |
+| 顶 | extra | `makeExtra`：`meta + extra(6)` | `7` | `null` |
+
+**朝向解码**：`facing = ForgeDirection.getOrientation(meta - offset)`（`offset = 10`）→
+`12→NORTH, 13→SOUTH, 14→WEST, 15→EAST`；与 `BlockDummyable#getRotationFromState`（`:376-379`）同一约定。
+`BlockDummyable#transformMeta`（`:519-539`）对 `>= 12` 走"核心偏移"分支，因此旋转/镜像时元数据不会被破坏。
+
+**TE 注册**：三个 TE 类都必须在 `ModBlocks.preInit()` 里 `GameRegistry.registerTileEntity(...)`（本工程既有做法）。
+
+**为什么不用手写多方块（对比现有 `test_multiblock`）**：
+手写方案只有 4 bit 元数据预算（`facing` 2 bit + `role` 2 bit ≤ 4 格），一旦要支持"柱高可变"或"更多格"就会爆掉；
+`BlockDummyable` 的元数据由"方向 + extra"表达，天然支持任意柱高（`RBMKDials.getColumnHeight` 的做法，
+`RBMKDials.java:70-72,303`），且放置/拆除/自愈/碰撞箱/高亮框全部现成。
+
+### 4.3 放置、拆除、掉块与顶盖
+
+**放置**（全部由 `BlockDummyable` 现成实现，我们只提供数据）
+
+| 步骤 | 行为 | 证据 |
+|---|---|---|
+| 1 | 玩家放置的瞬时方块被移除，并用 `checkRequirement` 检查空间是否可替换 | `BlockDummyable.java:181-226`（`MultiblockHandlerXR.checkSpace:21-53`，判定用 `isReplaceable`） |
+| 2 | 空间不足 → 退物（手持 → 背包 → 掉落），与原版一致 | `:209-226` |
+| 3 | 通过 → 在核心位置放置 `META = dir.ordinal() + 10` 并 `fillSpace` 填假块 | `:228-233`、`:273-275` |
+| 4 | 我们覆写 `fillSpace`：`super.fillSpace(...)` 后对**顶格**调 `makeExtra` | 仿 `RBMKBase.java:131-135` |
+| 5 | `getDirModified(dir)` 返回玩家水平朝向 → 核心 meta ∈ 12-15 | 本文 §4.2 |
+
+**拆除**
+
+- 拆假块/顶格：`breakBlock` 找到核心并 `setBlockToAir`（`:316-338`），核心连带消失 → **整柱一起没**。
+- 拆核心：`META >= 12` 分支不做事（`:319-321`），但假块的生命周期由 `neighborChanged`/`updateTick` 兜底
+  （`:92-128`：邻居不再是同类方块就自毁）→ 最多残留 1 tick。
+- 掉落物：由核心 TE 的 `getDrops`（未实现则无掉落）与 `InventoryHelper.dropInventoryItems`（`:336`）决定；
+  我们的规则是**从核心格掉落 1 个对应物品**，假块不掉。
+
+**顶盖（可选装饰，二期）**
+
+`RBMKBase` 的 lid 由 TESR `RenderRBMKLid` 渲染（`render/tileentity/RenderRBMKLid.java:24,35`）。
+我们**一期不做盖子**（避免引入 TESR）；若将来要做，走同一路线：共享一个 `ITileEntitySpecialRenderer` 自绘。
+一期改为让"顶格 extra"的 baked model 本身就长得像盖板（§4.5）。
+
+### 4.4 面定向接力组网（定稿算法）
+
+**面定义**
+
+| 名称 | 定义 | 用途 |
+|---|---|---|
+| `FACING` | 柱的核心格 meta 解码出的水平朝向 | 定义 BACK / SIDE |
+| `BACK` | `FACING.getOpposite()` | 检测热交换器 |
+| `SIDE` | `FACING.rotateY()` 与 `FACING.rotateYCCW()`（**与 FACING 垂直的 2 面**） | 检测计算单元 |
+
+```
+// 只在"可能影响组网的事件"后重算并缓存：validate()、neighborChanged()、TE 载入、柱被拆
+detectComputeUnits():
+    max     = this.computeSlots                 // 变体数据, 默认 4
+    found   = []                                // 有序, 便于 GUI/OC 稳定展示
+    visited = {this.pos}
+    queue   = [this]
+
+    while (!queue.isEmpty() && found.size() < max):
+        node = queue.poll()
+        for (face : [node.FACING.rotateY(), node.FACING.rotateYCCW()]):
+            p = node.pos.offset(face)
+            te = world.getTileEntity(p)
+            if (te is TileEntityITServerCompute && !visited.contains(p)):
+                visited.add(p)
+                found.add(te)
+                if (found.size() >= max) break
+                queue.add(te)                   // ← 接力：用该计算单元自己的 FACING 继续检测
+    return found
+```
+
+| 要点 | 说明 |
+|---|---|
+| 接力语义 | "已连接到核心单元的计算单元会传递检测任务" → 用**各自**的 FACING，因此链路可以拐弯（模块化布线） |
+| 上限 | `computeSlots`（**变体数据，默认 4**）；不同变体可不同（R2.3） |
+| 复杂度 | 上界 = `(4+1)` 根柱 × 2 面 = **10 次 `getTileEntity`**，且只在组网事件后重算 → 不是每 tick |
+| 防环 | `visited` 集合；链路成环也不会重复计入 |
+| 未连接的计算单元 | 不在 `found` 里 → 不贡献算力（GUI 可显示"存在但未连接"提示） |
+| 组网输入与输出 | 输入：FACING + 邻居；输出：`found` 列表 + `compute` 总量（§4.1 公式） |
+
+**TU 去向检测（与算力同源，但用 BACK 面）**
+
+```
+collectHeatTargets():
+    targets = []
+    for (unit : [this] + detectComputeUnits()):     // 核心 + 每个已连接计算单元
+        p = unit.pos.offset(unit.FACING.getOpposite())   // BACK 面
+        te = world.getTileEntity(p)
+        if (te is TileEntityITServerHeatExchanger): targets.add(te)
+    return targets
+```
+
+**反向标记（关键实现细节）**：热交换器自己也需要知道"该服务谁"。做法：
+热交换器每 tick 检查自己的 **FRONT 面**（`FACING`）邻居是否为核心/计算单元，是则把对方登记为本轮抽热对象。
+这样**只在换热器一侧做判定**，核心/计算单元不需要被动维护反向表，也天然解决"换热器被拆/被换朝向"的清理问题。
+
+> 即：**核心/计算单元用 BACK 面主动找换热器**（用于 GUI 展示与算力/散热核算）；
+> **换热器用 FRONT 面主动找抽热源**（用于真正的 TU 转移）。两者互为反向，语义一致。
+
+### 4.5 渲染与资源（无 TESR 路线）
+
+**构造器与模型接管**
+
+```java
+public class BlockITServerCore extends BlockDummyable {
+    public BlockITServerCore() {
+        // 3 参构造：不加入 IDynamicModels.INSTANCES、不加入 ModBlocks.ALL_BLOCKS
+        //   → 基类 bakeModel 与 getStateMapper 都不会被调用 → 我们的 assets 生效
+        super(Material.IRON, "server_core", true);
+    }
+    @Override public EnumBlockRenderType getRenderType(IBlockState s) { return EnumBlockRenderType.MODEL; }   // 基类为 INVISIBLE
+    @Override public boolean isOpaqueCube(IBlockState s)             { return false; }
+    @Override public boolean isBlockNormalCube(IBlockState s)        { return false; }
+    @Override public boolean shouldSideBeRendered(IBlockState s, IBlockAccess a, BlockPos p, EnumFacing f) { return true; }
+    @Override public int[] getDimensions() { return new int[] {2, 0, 0, 0, 0, 0}; }
+    @Override public int getOffset()       { return 0; }
+    @Override protected void fillSpace(World w, int x, int y, int z, ForgeDirection d, int o) {
+        super.fillSpace(w, x, y, z, d, o);
+        this.makeExtra(w, x, y + 2, z);      // 顶格 → extra
+    }
+    @Override public ForgeDirection getDirModified(ForgeDirection dir) { return horizontalOf(dir); }  // 保留朝向
+    @Override public TileEntity createNewTileEntity(World w, int meta) {
+        if (meta >= 12) return new TileEntityITServerCore();
+        return null;                          // 假块与顶格：无 TE
+    }
+}
+```
+
+> `createNewTileEntity(meta >= 12)` 的分支范式来自 `MachineAssemblyMachine.java:23-27`。
+> **3 参构造是硬要求**：`BlockDummyable.java:541-569` 的 `bakeModel` 会把模型烤成钢块，
+> 而 `ModEventHandlerClient.java:445` 对 `IDynamicModels.INSTANCES` 无条件执行；3 参构造不进该列表（`:70-77`）。
+
+**blockstates（穷举 16 个变体，防 `MissingVariantException`）**
+
+`src/main/resources/assets/ntm-it/blockstates/server_core.json`：
+
+| variant | 模型 | 用途 |
+|---|---|---|
+| `meta=12` / `13` / `14` / `15` | `models/block/server_core_core.json`（或四份按朝向细分的前面板模型） | 核心格，四向 |
+| `meta=1` | `models/block/server_core_mid.json` | 中间假块 |
+| `meta=7` | `models/block/server_core_top.json` | 顶格 extra |
+| `meta=0,2,3,4,5` | 复用 `_mid`（容错：斜向/水平相邻的假块） | 防御性 |
+| `meta=6,8,9,10,11` | 复用 `_top`（容错：其它方向的 extra） | 防御性 |
+
+三个单元各一套（`server_compute` / `server_heat_exchanger` 同理）。
+
+**模型 JSON 硬规则**（来自 `README.md` 的实测教训，必须遵守）
+
+1. 元素坐标**每轴限制 `-16..32`**；
+2. 几何超出 `0..16` 时**每个面都要显式 `uv`**；
+3. 满立方体的**每个面都要 `cullface`**，否则相邻柱的贴合面会 z-fighting；
+4. 顶面需要 `"rotation": 180`（否则纹理边缘与北面错位）；
+5. 物品图标另做 `models/item/<name>.json`（可复用 `_core` 几何 + `display` 变换）。
+
+**为什么不用 RBMK 的做法**：RBMK 的 `rbmk_rod.json` 只有一个 `normal` 变体（`assets/hbm/blockstates/rbmk_rod.json`），
+因为它在 `IDynamicModels` 里、由 `getStateMapper`（`BlockDummyable.java:583-592`）把一切状态映射到 `normal`；
+**我们无法复用这条管线**（否则模型被基类 `bakeModel` 覆盖），所以走"自有 blockstates 穷举变体 + 3 参构造"。
+
+### 4.6 热能与电力子系统
+
+**热能（TU）**
+
+| 项 | 定稿 |
+|---|---|
+| 核心/计算单元角色 | 实现 `IHeatSource`：`getHeatStored()` 返回当前 TU，`useUpHeat(int)` 扣减并 clamp ≥ 0 |
+| 产热 | `heatPerTick = coreIdleHeat + Σ(激活轮询任务 × heatPerTask)`；空转自衰减照抄 `TileEntitySawmill.java:225`：`heat = max(heat - max(heat/1000, 1), 0)` |
+| 换热器角色 | **热汇（heat sink）**，不实现 `IHeatSource` |
+| 换热器抽热 | 对 FRONT 面邻居（核心/计算单元）执行 HBM 原生公式（`TileEntityMachineCoker.java:192-215`）：<br>`if (source == null) return;`<br>`if (this.heat >= this.maxHeat) return;`<br>`int diff = source.getHeatStored() - this.heat;`<br>`if (diff <= 0) return;`<br>`diff = (int) Math.ceil(diff * this.diffusion);`<br>`source.useUpHeat(diff); this.heat += diff;`<br>`this.heat = Math.min(this.heat, this.maxHeat);` |
+| `diffusion` | 热系数，字段化（与 HBM 同名同义）；默认值 0.1，可被变体/配置覆盖 |
+| `maxHeat` | 换热器单次可持有的 TU 上限；超过则不再接收，直到流体把它带走 |
+| 冷却介质 | `FluidTankNTM` in/out 双罐；`in.hasTrait(FT_Coolable.class)` → `FT_Coolable t = in.getTrait(FT_Coolable.class)`；`double eff = t.getEfficiency(FT_Coolable.CoolingType.HEATEXCHANGER)`；`eff <= 0` 或 `in.getFill() < t.amountReq` → 本 tick 不冷却 |
+| 冷却操作 | 每次消耗 `amountReq`（满足 `amountProduced` 的前提下）→ 输出罐设为 `t.coolsTo` 并注入 `amountProduced`；可吸收的 TU 上限取 `t.heatEnergy * eff`（并用 `diffusion` 兜底限制单 tick 速率） |
+| 流体接口 | `IFluidStandardReceiverMK2`（in）+ `IFluidStandardSenderMK2`（out），`DirPos` 六面（或按变体限制）；参照 `MESSAGE.md` §4 的实现层建议 |
+| 玩家可扩展性 | 全部参数来自 HBM 流体特性系统（`run/config/hbm/_hbmFluidTraits.json` 可增改 `coolable` 条目），我们**不硬编码任何流体** |
+
+**电力（HE）**
+
+| 项 | 定稿 |
+|---|---|
+| 实现 | `TileEntityITServerCore extends TileEntityMachineBase(…, enableEnergyWrapper = true) implements IEnergyReceiverMK2` |
+| 接入面 | **bottom / top / side 全通**：`getConPos()` 返回核心格 6 邻的 `DirPos`（`pos.down()/up()/±X/±Z`，方向用 `Library.NEG_Y/POS_Y/POS_X/…`）；`IEnergyConnectorMK2.canConnect` 保持默认（六面全通，`IEnergyConnectorMK2.java:13-15`） |
+| 接入循环 | `update()` 内 `for (DirPos p : getConPos()) this.trySubscribe(world, p);`（范式：`TileEntityMachineAssemblyMachine` tile `:104-105`） |
+| 必须覆写 | `getReceiverSpeed()`（默认 = `getMaxPower()`，见 §2.3 L7）→ 返回受限值，如 `min(maxPower, powerPerTick * 20)` |
+| 优先级 | `getPriority()` 默认 `NORMAL`；服务器属"基础设施"，一期取 `HIGH`（§11 ADR-5） |
+| 耗电 | `powerCost = standbyCost + Σ(激活轮询任务 × costPerTask)`；不足 → §4.1 状态机降频 |
+| FE 兼容 | 由 `TileEntityMachineBase.enableEnergyWrapper` 自动提供（`TileEntityMachineBase.java:242-291`），换算率 `GeneralConfig.conversionRateHeToRF`；**不需要额外代码** |
+| 其它单元 | 一期计算单元与换热器**不接电**（由核心统一结算）；若要各自接电，记入 §11 ADR-7 |
+
+### 4.7 交互
+
+| 操作 | 行为 | 实现要点 |
+|---|---|---|
+| 右键核心格（空手/普通物品） | 打开 GUI（`ModGuiHandler.ID_SERVER = 1`） | `onBlockActivated` → `FMLNetworkHandler.openGui(player, NTMITMod.instance, ID_SERVER, world, coreX, coreY, coreZ)`（本工程 console 的既有写法） |
+| 右键假块/顶格 | 同样打开 GUI（定位到核心） | `BlockDummyable.findCore(world, pos)` 取核心坐标（`:131-143`） |
+| 潜行右键 | 预留：切换"显示组网调试信息"（chat 输出算力/散热/状态） | 与 `test_block` 的调试手感一致 |
+| 扳手 / 多目标引爆器 | 绑定到控制面板（`ItemMultiDetonator` → `SubElementLinker`） | 已由 HBM 现成逻辑覆盖：`findCore` → `IControllable`（`SubElementLinker.java:101-115`）；**我们只需实现 `IControllable`** |
+| 用错朝向放置 | 核心 meta 记录玩家水平朝向；无"竖放"分支 | §4.2 / §2.3 L4 |
+
+### 4.8 RBMK 参照实现备注（file:line 对照，供编码时核对手感）
+
+| 主题 | HBM 做法 | 位置 | 我们的差异 |
+|---|---|---|---|
+| 柱是 dummyable | `RBMKBase extends BlockDummyable` | `RBMKBase.java:38` | 相同 |
+| 只向上延伸 | `{3,0,0,0,0,0}` / `{columnHeight,0,…}`，`columnHeight = clamp(dial,2,16)-1`（默认 dial=4 → 3） | `RBMKBase.java:52-54,142-144`；`RBMKDials.java:70-72,303` | 我们用固定 `{2,…}`（总高 3）；柱高若要可配置，照抄这套 dial 思路 |
+| 无朝向 | `getDirModified` 恒返回 `DIR_NO_LID = NORTH` | `RBMKBase.java:127-129,137-140` | **我们改为返回玩家朝向**（否则没有 BACK/SIDE 面） |
+| 顶格转 extra | `fillSpace` 后 `makeExtra(world, x, y+columnHeight, z)` | `RBMKBase.java:131-135`；`BlockDummyable.java:278-292` | 相同 |
+| TE 按 meta 分支 | 各 RBMK 方块自定；通用范式见 `MachineAssemblyMachine.java:23-27`（`meta>=12` → 核心 TE，`meta>=6` → 代理，否则 `null`） | 同左 | 我们不用"代理/端口"（`TileEntityProxyCombo`），假块一律 `null` |
+| 盖子 | TESR `RenderRBMKLid`，并用 `getBoundingBox` 抬高 0.25 | `RenderRBMKLid.java:24,35`；`RBMKBase.java:99-118` | 一期不做（§4.3） |
+| 组网方式 | 不靠结构连通：每柱 `validate()` 注册进 `ControlEventSystem`，控制台按 15×15 扫描 | `TileEntityRBMKConsole.java:43,89-98`；`ControlEventSystem.java:23-37` | **我们靠相邻 + 面定向**（需求 R2） |
+| 渲染类型 | `MODEL`（非 TESR） | `RBMKRod.java:43-45`、`RBMKBlank.java:24-26` | 相同（但模型管线不同，见 §4.5） |
+| 拆除 | 假块自毁 + 核心连带 | `BlockDummyable.java:92-128,316-338` | 相同 |
+
+## 5. 数据层
+
+### 5.1 DataClass 定义
+
+```java
+public class ServerDataClass {
+    public int    id;            // 稳定 id（重命名不改变），0 起递增，存档唯一
+    public String name;          // 数据类名 = getQueryData() 的键名（面板按名引用）
+    public DataType type;        // NUMBER / STRING / ENUM（复用 HBM DataValue.DataType 语义）
+    public SourceKind sourceKind;// CONTROLLABLE / RBMK_CONSOLE / BUILTIN
+    public BlockPos sourcePos;   // 源坐标（BUILTIN 可为 null）
+    public String sourceField;   // 源内的字段名（IControllable.getQueryData() 的键）
+    public Aggregator agg;       // NONE / AVG / SUM / MIN / MAX / COUNT / LAST
+    public int  pollPeriod;      // 轮询周期（tick），>= pollIntervalFloor
+    public boolean enabled;      // 玩家可临时禁用
+    public String unit;          // 仅显示用（GUI/OC）
+}
+```
+
+| 字段 | 取值域 | 备注 |
+|---|---|---|
+| `type` | `NUMBER` / `STRING` / `ENUM` | 与 `DataValue.DataType`（`DataValue.java:37-42`）对齐，决定产出哪种 `DataValue` |
+| `sourceKind` | `CONTROLLABLE` / `RBMK_CONSOLE` / `BUILTIN` | 对应 §5.2 的三种适配器 |
+| `agg` | `NONE`（单源直读）/ `AVG`/`SUM`/`MIN`/`MAX`/`COUNT`/`LAST` | 聚合只在"一个数据类绑定多个源坐标"时有意义；一期先支持 `NONE` 与 `LAST`，其余在 P2 补齐 |
+| `pollPeriod` | `>= pollIntervalFloor`（§4.1） | 引擎按周期分桶 |
+| 上限 | `dataClassLimit`（§4.1） | 超出时 GUI 禁止新增并提示 |
+
+### 5.2 源适配层
+
+```java
+public interface IServerSource {
+    boolean isValid(World world);
+    /** 读取一个字段；返回 null 表示字段当前不存在（源被拆/字段改名） */
+    DataValue read(World world, String field);
+    /** 供 GUI 列出可选字段 */
+    Map<String, DataValue> listFields(World world);
+}
+```
+
+| 适配器 | 覆盖对象 | 实现要点 |
+|---|---|---|
+| `ControllableSource` | 任意实现 `IControllable` 的 TE | `te.getQueryData()`；字段存在性用 `containsKey` 判定；**只读缓存/不快照以外的开销** |
+| `RbmkConsoleSource` | `TileEntityRBMKConsole`（**它不是 `IControllable`**，`TileEntityRBMKConsole.java:43`） | 直读 `columns[]`（`:89-98`）与 `RBMKColumn.data`（`:614-622`），按 `ColumnType`（`:594`）/`ScreenType`（`:604`）聚合出 avg/max/total 之类的复合字段；字段名形如 `rbmk.temp.avg` |
+| `BuiltinSource` | 核心单元自身的量 | 例：`server.compute`、`server.heat`、`server.power`、`server.state`、`server.computeUnits`、`server.dataClasses` |
+
+### 5.3 轮询引擎
+
+```
+TileEntityITServerCore.update():                 // 服务端
+    tick++
+    refreshGroupIfDirty()                        // §4.4，仅在脏标记时重算
+    applyResourcesAndState()                     // 电力/散热 → state（§4.1）
+    if (state == HALTED) return
+
+    bucket = tick % LCM? 不必要 —— 按 pollPeriod 分桶：
+    for (cls : dataClasses):
+        if (!cls.enabled) continue
+        if (tick % effectivePeriod(cls) != 0) continue     // effectivePeriod 受 state 影响（THROTTLED ×4）
+        src = resolveAdapter(cls)                          // 缓存的适配器实例
+        if (src == null || !src.isValid(world)): markInvalid(cls); continue
+        v  = src.read(world, cls.sourceField)
+        if (v == null): markInvalid(cls); continue
+        writeCache(cls.name, v)                            // 写入只读缓存
+        if (changed) markDirty()
+```
+
+| 要点 | 说明 |
+|---|---|
+| 失效剔除 | 源被拆/字段消失 → 标记 `invalid`（GUI 显示红字），**保留条目**（玩家拆掉重放后自动恢复），只在连续失败 N 轮后才禁用 |
+| 区块卸载 | `world.isBlockLoaded(pos)` 为假时跳过并计入 `invalid`，但**不清除条目**（对比 `TileEntityDummy` 的激进自毁逻辑，我们不复用） |
+| 性能预算 | 每 tick 最多处理 `maxPollsPerTick` 个数据类（可配置，默认 16），剩余排队到下一 tick，避免大配置卡服 |
+| 不做广播 | 值变化只 `markDirty()`；面板按自己的 tick 事件主动来读（§3.2 S1）——避免每 tick 发包 |
+| 缓存结构 | `LinkedHashMap<String, DataValue>`（保持注册顺序，GUI/OC 展示稳定） |
+
+### 5.4 持久化 NBT 草案（`TileEntityITServerCore`）
+
+```
+<root>
+  "server_version" : int          // 结构版本号，当前 1；为将来迁移留口
+  "tick"           : int          // 轮询相位（不必须存，但便于调试）
+  "power"          : long
+  "heat"           : int
+  "classes"        : {            // 数据类注册表
+      "count" : int,
+      "c0" : {                    // 用索引键而非 name，避免名字含特殊字符
+          "id": int, "name": str, "type": str, "kind": str,
+          "px": int, "py": int, "pz": int, "hasPos": bool,
+          "field": str, "agg": str, "period": int, "enabled": bool, "unit": str
+      },
+      ...
+  }
+  "dispatchGroups" : {            // 自由发送的目标集合
+      "count": int,
+      "g0": { "id": int, "name": str, "mode": str /* STATIC|GROUP_SOURCES|POLL_MEMBERS */,
+              "count": int, "p0x": int, "p0y": int, "p0z": int, ... }
+  }
+  "panel"          : { ... }      // 预留：核心单元若接入控制面板的 globalVars
+```
+
+| 键 | 为什么要存 | 备注 |
+|---|---|---|
+| `server_version` | 后续加字段时的迁移依据 | 一期只写不读 |
+| `id` | 重命名数据类时保持引用稳定（面板按 `name` 引用，`id` 供 GUI/OC 引用） | 见 §5.6 |
+| `hasPos` | `BUILTIN` 源没有坐标 | 避免 `BlockPos(0,0,0)` 歧义 |
+| 索引键 `c0/c1…` | 与 `ControlPanel.writeToNBT`（`ControlPanel.java:99-119`）同款风格，保持本工程一致性 | 不用 `setTag(name, ...)` 以免名字冲突 |
+
+**同步**：`getUpdateTag()` / `getUpdatePacket()` / `onDataPacket()` 复用**同一个** `writeToNBT` 输出
+（范式：`TileEntityControlPanel.java:166-179`），客户端 GUI 因此能拿到完整注册表。
+
+### 5.5 `getQueryData()` 契约（**硬契约**）
+
+```java
+@Override
+public Map<String, DataValue> getQueryData() {
+    Map<String, DataValue> out = new LinkedHashMap<>();
+    for (Map.Entry<String, DataValue> e : this.cache.entrySet()) out.put(e.getKey(), e.getValue());
+    return out;                       // 只读快照；不查世界、不做 IO、不加锁
+}
+```
+
+| 规则 | 理由 |
+|---|---|
+| **只返回缓存** | `NodeQueryBlock.evaluate()` 每 tick 调用（`NodeQueryBlock.java:82-97`）→ 见 §2.3 L8 |
+| 客户端也要能调 | `setDataSelector()` 在 GUI 里对**客户端世界**取 `getTileEntity`（`:55-57`）→ 客户端 TE 必须有同样的缓存（由 `getUpdateTag` 同步） |
+| 键名即数据类名 | 面板节点存的是字符串 `dataName`（`NodeQueryBlock.java:14-15,66-80`） |
+| 类型映射 | `NUMBER → DataValueFloat`、`STRING → DataValueString`、`ENUM → DataValueEnum`；映射表见 §5.6 |
+| 值不可变 | `DataValue` 是抽象类（`DataValue.java:8-15`），我们只存不共享可变内部状态 |
+| 字段缺失时不要抛异常 | 返回缓存里的旧值或跳过该键；`NodeQueryBlock` 对缺失键会回落到 `DataValueFloat(0)`（`:96`） |
+
+### 5.6 命名稳定性（**必须写进 GUI 警告**）
+
+- 面板侧保存的是**字符串键**（`NodeQueryBlock.dataName`，写盘于 `:69`）→ **重命名数据类会打断已保存的面板程序**。
+- 定稿策略：GUI 的"重命名"实际执行 **新建 + 旧名保留为 alias**（旧 alias 指向同一 `id`，仍返回同一个值），
+  并在 GUI 上明确提示"删除该数据类会打断引用它的面板程序"。
+- 删除时不做级联清理（无法安全修改别人的面板存档）；提供"扫描并列出引用了本数据类的面板"的只读诊断（二期）。
+
+## 6. 接口层
+
+### 6.1 控制面板集成（双路径）
+
+**路径 1（零侵入，永远可用）**
+
+```
+玩家用多目标引爆器点核心格 → 面板 GUI 的 Linker 页 accept
+  → SubElementLinker 用 BlockDummyable.findCore 定位核心，拿到我们的 TE（实现 IControllable）
+  → 加入 control.connectedSet（SubElementLinker.java:125-132）
+  → 事件页 accumulateEventTypes(linked) 会遍历我们的 getInEvents()/getOutEvents()（SubElementEventEditor.java:63-74）
+  → 编程界面里放一个 Query Block 节点，下拉即列出我们 getQueryData() 的所有键（NodeQueryBlock.java:52-63）
+```
+
+**路径 2（Mixin 增强，定制节点）**
+
+在路径 1 的基础上额外提供两个节点（见 §6.2），下拉直接列出**核心单元注册的数据类**（含实时值与状态），
+并支持"按目标集合发送事件"。
+
+**必须先做的注册（preInit）**
+
+```java
+// 1) 自定义事件必须先注册，否则 SubElementEventEditor 取名字时抛 RuntimeException
+ControlEvent.register(new ControlEvent("ntmit_server_read").setVar("index", 0));
+ControlEvent.register(new ControlEvent("ntmit_server_poll_now"));
+ControlEvent.register(new ControlEvent("ntmit_server_dispatch")
+        .setVar("event", "").setVar("x", 0).setVar("y", 0).setVar("z", 0));
+```
+
+> 注意 `ControlEvent.setVar(String, String)` 存在（`ControlEvent.java:35-38`），因此事件可以带字符串参数（事件名）。
+
+**核心单元要实现的事件面**（与 §2.3 L6 一致，**声明集合与接受集合必须完全一致**）
+
+| 方法 | 返回/行为 |
+|---|---|
+| `getInEvents()` | `["ntmit_server_read", "ntmit_server_poll_now", "ntmit_server_dispatch"]`（+ 需要时的 `"tick"`；一期**不订阅 tick**，理由见 §2.3 L9） |
+| `getOutEvents()` | `["ntmit_server_data"]`（数据类值变化时可选广播，一期不做，先声明以便面板能编辑） |
+| `receiveEvent(BlockPos from, ControlEvent e)` | 按 `e.name` 分派：读值 → `broadcastToSubscribed` 回发；立即轮询一次；执行派发 |
+| `getControlPos()` / `getControlWorld()` | `getPos()` / `getWorld()` |
+
+### 6.2 自定义节点（路径 2；依赖 M1 + M2）
+
+**`NodeServerQuery`（`nodeType = "ntmit_server_query"`，`getType() = NodeType.INPUT`）**
+
+| 元素 | 类型 | 说明 |
+|---|---|---|
+| 服务器坐标下拉 | `NodeDropdown` | 候选 = `ctrl.connectedSet` 中解析为"服务器核心单元 TE"的坐标（与 `NodeQueryBlock` 的坐标下拉同款，`NodeQueryBlock.java:24-33`） |
+| 数据类下拉 | `NodeDropdown` | 候选 = 该核心单元 `getQueryData().keySet()`（**这就是"在编程界面选择玩家在服务器 GUI 注册好的数据类"**） |
+| 输出 | `NodeConnection`（GENERIC） | 求值 = 核心 TE 缓存里的对应 `DataValue` |
+| NBT | `controlIdx` / `blockPos` / `dataName` | 与 `NodeQueryBlock` 完全同构（`NodeQueryBlock.java:65-80`），便于复用理解与排障 |
+| `evaluate(idx)` | 与服务端同源 | 客户端读客户端 TE 的同步缓存（同 `NodeQueryBlock.java:82-97` 的模式） |
+
+**`NodeServerDispatch`（`nodeType = "ntmit_server_dispatch"`，`getType() = NodeType.OUTPUT`）**
+
+| 元素 | 类型 | 说明 |
+|---|---|---|
+| 服务器坐标下拉 | `NodeDropdown` | 同上 |
+| 目标集合下拉 | `NodeDropdown` | 候选 = 该核心单元的 `dispatchGroups` 名称 + 内建模式 |
+| 事件名下拉 | `NodeDropdown` | 候选 = 所有已注册 `ControlEvent`（含 HBM 原生的 `rbmk_ctrl_set_level` 等） |
+| 参数输入 | `NodeConnection`（按事件 `vars` 动态生成，逻辑同 `NodeEventBroadcast.setEvent`，`:85-97`） | 支持把任意上游节点的值接到 `level`/`color`/`isOn` 等 |
+| 输出语义 | 调 `coreTEDispatch(group, eventName, vars)`（服务端执行） | 面板的 `sendNodeMap` 不支持跨设备转发，所以由服务器统一派发（§6.3） |
+
+**M1 的注入形态（示意）**
+
+```java
+@Mixin(value = Node.class, remap = false)
+public class MixinNode {
+    @Inject(method = "nodeFromNBT", at = @At("RETURN"), cancellable = true)
+    private static void ntmit$extend(NBTTagCompound tag, NodeSystem sys, CallbackInfoReturnable<Node> cir) {
+        if (cir.getReturnValue() != null) return;
+        switch (tag.getString("nodeType")) {
+            case "ntmit_server_query"    -> cir.setReturnValue(new NodeServerQuery(0, 0, sys.parent.panel.controls.get(tag.getInteger("controlIdx"))));
+            case "ntmit_server_dispatch" -> cir.setReturnValue(new NodeServerDispatch(0, 0, sys.parent.panel.controls.get(tag.getInteger("controlIdx"))));
+            default -> { }
+        }
+    }
+}
+```
+
+**M2 的注入形态（示意）**：在 `keyTyped` 的菜单构建处插入一项
+`"NTM-IT" → ["Server Query", "Server Dispatch"]`；两项各自构造对应节点并 `currentSystem.addNode(node)`。
+
+**降级**：`nodeFromNBT` 注入失败 → 已保存的这两类节点读不出来（此时 M4 的占位对象会兜住，避免 NPE）。
+
+### 6.3 自由发送（目标集合解析）
+
+| 模式 | `mode` 取值 | 目标集合 | 用途 |
+|---|---|---|---|
+| 静态坐标表 | `STATIC` | 玩家在 GUI 里逐个添加的坐标 | "把这条命令发给这几个门/炮塔" |
+| 组网源集合 | `GROUP_SOURCES` | 核心单元数据类里所有**有效源**的坐标 | "让所有被监控的设备执行同一动作" |
+| 轮询组成员 | `POLL_MEMBERS` | 本核心单元本次轮询涉及的坐标（去重） | 与上式近似，但只含启用的数据类 |
+
+```
+dispatch(groupId, eventName, vars):
+    evt = ControlEvent.newEvent(eventName)          // 要求已注册（ControlEvent.java:75-84）
+    for (k, v) in vars: evt.setVar(k, v)
+    positions = resolve(groupId)                    // 上面的三种模式
+    ControlEventSystem.get(world).broadcastEvent(this.pos, evt, positions)
+```
+
+| 保护 | 说明 |
+|---|---|
+| 未注册事件名 | `ControlEvent.newEvent` 会抛 `RuntimeException` → **先查 `ControlEvent.getRegisteredEvent` 并捕获**，GUI 只提供已注册名，OC 侧非法名返回错误而不是崩 |
+| 目标不存在该事件 | `broadcastEvent` 内部按 `controllablesByEventName.get(evt.name).get(pos)` 取，取不到就跳过（`ControlEventSystem.java:86-94`）→ 天然安全 |
+| 自我派发成环 | 派发前从 `positions` 中剔除自身坐标；服务器之间不转发（无级联） |
+| 限流 | 每次派发有目标数上限（默认 64）与每 tick 派发次数上限（默认 4） |
+| 权限 | 面板侧由 `IControlReceiver.hasPermission` 把关；OC 侧沿用 OC 自身的组件访问控制 |
+
+### 6.4 RBMK 控制台兼容
+
+`TileEntityRBMKConsole` **不是** `IControllable`（`TileEntityRBMKConsole.java:43`），因此它无法直接被面板查询。
+一期的做法是 `RbmkConsoleSource`（§5.2）在其 TE 上**直读**：
+
+| 复合字段（草案） | 计算 | 数据来源 |
+|---|---|---|
+| `rbmk.temp.avg` / `.max` | 按 `ColumnType` 过滤 `ROD`/`CONTROL` 列的 `data.getDouble("heat")` 求平均/最大 | `columns[i].data`（`:89-92`） |
+| `rbmk.heat.max` | 所有列的 `maxHeat` 最大 | 同上 |
+| `rbmk.rod.avg` | `CONTROL` 列的 `level`（×100 语义，见 `MESSAGE.md` §2.7） | `RBMKColumn.data` |
+| `rbmk.flux.total` | 控制台自身的通量显示缓冲 | `fluxDisplayBuffer`（`:45`）/`prepareScreenInfo`（`:109+`） |
+
+**二期候选（ADR-3）**：用 M5 让 `TileEntityRBMKConsole` 实现 `IControllable` 并在 `getQueryData()` 里返回上述聚合值，
+这样连 `NodeQueryBlock` / `NodeServerQuery` 都能直接选它。
+
+### 6.5 OpenComputers
+
+```java
+@Override public String getComponentName() { return "ntmit_server"; }   // CompatHandler.OCComponent:220-224
+@Override public boolean canConnectNode(EnumFacing side) { return true; } // :231-235
+@Override public String[] methods() { ... }                              // ManagedPeripheral:241-243
+@Override public Object[] invoke(String method, Context ctx, Arguments args) throws Exception { ... }  // :249-251
+```
+
+| 方法 | 语义 | 返回 |
+|---|---|---|
+| `listDataClasses()` | 列出注册表 | `Object[]{ List<String> "name (id, type, source, period)" }` |
+| `getValue(name)` | 读缓存值 | `Object[]{ number|string }`（按 `DataValue.getType()` 分支） |
+| `setPollPeriod(name, ticks)` | 改周期（受上限约束） | `Object[]{ true|false }` |
+| `registerDataClass(name, kind, x, y, z, field, agg, period)` | 注册（等价于 GUI 操作，**服务端校验上限**） | 成功返回 id，失败返回 `null` |
+| `removeDataClass(name)` | 删除 | `Object[]{ true|false }` |
+| `listGroups()` / `listGroupTargets(id)` / `dispatch(id, event, table)` | 自由发送 | 派发数量或错误 |
+| `getServerState()` | `RUNNING/THROTTLED/HALTED/UNDER_POWER` + 算力/散热/电力 | `Object[]{ table }` |
+| `listComputeUnits()` | 已连接计算单元坐标 | `Object[]{ List<String> }` |
+
+- 全部用 `@Callback` + `@Optional.Method(modid = "opencomputers")`；
+- 方法与 `TileEntityControlPanel` 的 OC 面（`TileEntityControlPanel.java:267-300+`）保持同款风格；
+- 依赖已是 `compileOnly`（`dependencies.gradle`），运行期由 HBM 带进来（`MESSAGE.md` §5.5-3）。
+
+## 7. GUI 与网络
+
+### 7.1 页面设计（`GuiITServer`）
+
+| 页面 | 内容 | 交互 |
+|---|---|---|
+| 主表 | 数据类列表：名 / 类型 / 源 / 周期 / 状态色（正常/失效/禁用） | 点击进入编辑；左侧复选框启用/禁用 |
+| 编辑页 | 名称、类型（NUMBER/STRING/ENUM）、源（先选类别再选坐标）、字段下拉、聚合算子、周期 | "字段下拉"的来源 = `IServerSource.listFields()` |
+| 源选择页 | 与 `SubElementLinker` 同风格：用多目标引爆器写入坐标后点 accept | 复用"引爆器记录坐标 → GUI accept"的心智模型 |
+| 派发组页 | 组名 + 模式（STATIC/GROUP_SOURCES/POLL_MEMBERS）+ 静态坐标列表 | 添加/删除坐标 |
+| 状态栏 | 算力（已连接/上限）、散热、电力、状态机状态 | 只读；按 `getUpdateTag` 同步 |
+
+### 7.2 新增类清单
+
+| 类 | 基类 / 接口 | 说明 |
+|---|---|---|
+| `blocks.BlockITServerCore` | `com.hbm.blocks.BlockDummyable` | 3 参构造（§4.5） |
+| `blocks.BlockITServerCompute` | 同上 | |
+| `blocks.BlockITServerHeatExchanger` | 同上 | |
+| `tileentity.TileEntityITServerCore` | `TileEntityMachineBase` | `ITickable, IEnergyReceiverMK2, IHeatSource, IControllable, IControlReceiver, IGUIProvider, CompatHandler.OCComponent` |
+| `tileentity.TileEntityITServerCompute` | `TileEntityLoadedBase` | `IHeatSource`；提供算力 |
+| `tileentity.TileEntityITServerHeatExchanger` | `TileEntityLoadedBase` | `IFluidStandardReceiverMK2, IFluidStandardSenderMK2`；热汇 |
+| `server.ServerDataClass` / `ServerDispatchGroup` | POJO | `writeToNBT/readFromNBT` |
+| `server.PollEngine` | 普通类 | 分桶轮询 + 聚合 + 失效剔除 |
+| `server.IServerSource` + 三个适配器 | 接口/实现 | §5.2 |
+| `inventory.container.ContainerITServer` | `Container` | 只读槽位：一个"坐标输入槽"放引爆器（与 `ContainerControlEdit` 同风格） |
+| `inventory.gui.GUITITServer` | `GuiContainer` | §7.1 |
+| `main.ModGuiHandler` | 既有类 | 新增 `ID_SERVER = 1` 分支（既有 `ID_CONSOLE = 0` 不动） |
+| `mixin.MixinNode` / `MixinSubElementNodeEditor` / `MixinNodeSystem` | Mixin | M1 / M2 / M4 |
+| `control.NodeServerQuery` / `NodeServerDispatch` | `com.hbm.inventory.control_panel.nodes.Node` | §6.2 |
+| `lib.ServerEvents` | 普通类 | preInit 里注册自定义 `ControlEvent` |
+
+### 7.3 网络
+
+| 方向 | 手段 | 说明 |
+|---|---|---|
+| 客户端 → 服务端（GUI 写入、按钮） | **复用 `com.hbm.packet.toserver.NBTControlPacket`** | `NBTControlPacket.java:86-91` 已做 `instanceof IControlReceiver` + `hasPermission`；我们只要实现 `receiveControl(EntityPlayerMP, NBTTagCompound)` 解析自己的键 |
+| 服务端 → 客户端（打开 GUI / 全量注册表） | `getUpdateTag()` / `getUpdatePacket()` / `onDataPacket()` | 复用 `writeToNBT` 输出（`TileEntityControlPanel.java:166-179`） |
+| 服务端 → 客户端（值变化） | **不推送** | 面板按 tick 主动读（§3.2 S1），避免高频发包 |
+| 是否需要自建通道 | **一期不需要** | 若将来要"实时值预览"，再评估自建 `SimpleNetworkWrapper`（**不挤占 HBM 的 discriminator**，`PacketDispatcher.java:13-116` 已用掉 0~70+） |
+
+**`receiveControl` 的键约定（草案）**
+
+| 键 | 含义 |
+|---|---|
+| `"action": "add" / "edit" / "remove" / "toggle" / "group_add" / "group_remove"` | 操作类型 |
+| `"cls_index"` / `"cls"`（嵌套 NBT） | 目标数据类与内容 |
+| `"group_index"` / `"group"` | 目标派发组与内容 |
+| 服务端**必须重新校验** | 上限、周期下限、坐标有效性、事件名已注册（绝不信任客户端） |
+
+### 7.4 权限
+
+- `IControlReceiver.hasPermission(player)`：一期沿用 `TileEntityControlPanel` 的宽松策略（`true`，`TileEntityControlPanel.java:182-184`），
+  但**派发与注册类操作**额外要求 `player.canUseCommand(2, "")` 或 OP（避免任意玩家用服务器当"遥控器"）→ §11 ADR-8。
+- OC 侧：由 OpenComputers 自身的组件访问控制（`canConnectNode`）决定。
+
+## 8. 资源与本地化清单
+
+### 8.1 资源文件
+
+```
+src/main/resources/
+  mixins.ntm-it.json                                  # Buildscripts 生成后补 client 段
+  assets/ntm-it/blockstates/
+      server_core.json            # 16 个 meta 变体（§4.5）
+      server_compute.json
+      server_heat_exchanger.json
+  assets/ntm-it/models/block/
+      server_core_core.json  server_core_mid.json  server_core_top.json
+      server_compute_core.json …（同理三份）
+      server_heat_exchanger_core.json …（同理三份）
+  assets/ntm-it/models/item/
+      server_core.json  server_compute.json  server_heat_exchanger.json
+  assets/ntm-it/textures/blocks/
+      server_core_{core,mid,top}.png   等   # 16x16 起步，可按 3 段各自贴图
+  assets/ntm-it/lang/{en_us,zh_cn}.lang
+run/resourcepacks/ntmit-dev/assets/ntm-it/textures/blocks/   # 迭代用，F3+T 热重载
+```
+
+### 8.2 本地化键
+
+| 键 | en_us | zh_cn |
+|---|---|---|
+| `tile.ntm-it.server_core.name` | Server Core Unit | 服务器核心单元 |
+| `tile.ntm-it.server_compute.name` | Server Compute Unit | 服务器计算单元 |
+| `tile.ntm-it.server_heat_exchanger.name` | Server Heat Exchanger | 服务器热交换器 |
+| `itemGroup.tabITContent` | （既有） | IT内容 |
+| `gui.ntm-it.server.title` | Server Control | 服务器控制 |
+| `gui.ntm-it.server.tab.classes` | Data Classes | 数据类 |
+| `gui.ntm-it.server.tab.groups` | Dispatch Groups | 派发组 |
+| `gui.ntm-it.server.state.running` / `.throttled` / `.halted` / `.under_power` | RUNNING / THROTTLED / HALTED / UNDER POWER | 运行 / 降频 / 停机 / 电力不足 |
+| `chat.ntm-it.server.bind` | Server core bound to %s, %s, %s | 服务器核心已对准 %s, %s, %s |
+| `chat.ntm-it.server.invalid_source` | Data class "%s" source missing | 数据类「%s」的源已失效 |
+| `tooltip.ntm-it.server.compute` | Compute: %s / %s | 算力：%s / %s |
+| `tooltip.ntm-it.server.cooling` | Cooling: %s TU/t | 散热：%s TU/t |
+
+> 已注册的既有键（`tile.ntm-it.test_block.name`、`tile.ntm-it.test_multiblock.name`、`chat.ntm-it.console_bind`）**保持不变**。
+
+## 9. 分阶段实施计划
+
+> 每阶段的"验收"必须是**可执行的检查**（命令或游戏内步骤），不接受"看起来对了"。
+
+### P0.0 —— Mixin 前置配置（✅ 已完成，2026-09-26）
+
+| 项 | 内容 |
+|---|---|
+| 改动 | ① `gradle.properties`：`usesMixins = false → true`、`mixinsPackage = → mixin`、**新增** `mixinProviderSpec = curse.maven:mixin-booter-419286:7049694`（附覆盖理由注释，见 §2.4 B1）；② 新增 `src/main/java/com/ntmit/mixin/package-info.java`（Buildscripts 校验该包目录必须存在，`build.gradle:153-162`）；③ `NTMITMod.DEPENDENCIES = "required-after:hbm;required-after:mixinbooter"` |
+| 生成物 | `src/main/resources/mixins.ntm-it.json`（内容见 §2.4 B2） |
+| 实测证据 | `gradlew.bat compileJava` → **BUILD SUCCESSFUL**，日志含 `Jabel: initialized`、`SpongePowered MIXIN Annotation Processor Version=0.8.7`、`Supported obfuscation types: ObfuscationServiceMCP supports [searge,notch]`；`gradlew.bat build` → **BUILD SUCCESSFUL**，产物 `build/libs/ntm-it-1.0.0.jar` 内含 `mixins.ntm-it.json`，manifest 出现 `ForceLoadAsMod: true` 与 `FMLCorePluginContainsFMLMod: true` |
+| 待观察 | 构建日志出现一行 `SRG file build\tmp\mixins\mixins.srg does not exist`——当前 `mixins` 数组为空，属预期；**P0.5 加入真实 Mixin 后需确认该行消失或确认无害** |
+| 纪律 | PowerShell 对成功的 Gradle 运行也可能报 `exit code 1`（警告走 stderr）→ 以 `BUILD SUCCESSFUL` 为准（`README.md`） |
+| 未做（属 P0.5） | 尚未加入任何真实 Mixin 类；`runClient` 的运行期加载验证只能在交互式客户端里手工完成 |
+
+### P0 —— 三单元柱骨架
+
+| 项 | 内容 |
+|---|---|
+| 目标 | 三个柱方块可放置、可拆除、模型可见、TE 正常注册；不含任何数据/轮询逻辑 |
+| 产出 | `BlockITServerCore/Compute/HeatExchanger`、`TileEntityITServer*`（空壳）、`ModBlocks` 注册 3 方块 + 3 ItemBlock + 3 TE、`ModGuiHandler.ID_SERVER` 占位、assets（blockstates 16 变体 + 3×3 模型 + 3 物品模型 + 12 张占位贴图） |
+| 关键点 | **3 参构造**（§4.5）；`getRenderType`/`isOpaqueCube`/`shouldSideBeRendered` 覆写；`fillSpace` + `makeExtra`；`createNewTileEntity` 分支；核心 meta ∈ 12-15 |
+| 验收 | `gradlew.bat build` 成功；`runClient` 中三个柱可放、可拆（拆任一格整柱消失）、四向朝向都正确、无 `domain ntm-it` 报错、无 `MissingVariantException`、无 `JsonParse` |
+
+### P0.5 —— Mixin 引导验证（**闸门：不通过不进入 P1 的路径 2**）
+
+| 项 | 内容 |
+|---|---|
+| 目标 | 证明 Mixin 编译链与运行期加载都通 |
+| 产出 | `gradle.properties` 三项（§2.4 B1）+ `com.ntmit.mixin` 包 + 一条**无害**的 Hello-Mixin（示例：注入 `ControlRegistry.init` 在 RETURN 处打一行日志）+ `mixins.ntm-it.json` |
+| 前置 | `gradle.properties` 必须先建好 `src/main/java/com/ntmit/mixin/`（否则配置期抛异常，`build.gradle:153-162`） |
+| 验收 | ① `gradlew.bat compileJava` 通过；② 生成的 `mixins.ntm-it.json` 的 `package` = `com.ntmit.mixin`；③ `runClient` 日志出现 Hello-Mixin 的日志、且**没有** `Mixin apply failed` / `Mixin config ... was not found`；④ `run/.mixin.out` 下能看到被注入的目标类 |
+| 失败处置 | 若坐标解析失败 → 回退 `forceEnableMixins = true` + 自行 `compileOnly`/`runtimeOnlyNonPublishable rfg.deobf("curse.maven:mixin-booter-419286:7049694")` |
+
+### P1 —— 数据层（路径 1 打通）
+
+| 项 | 内容 |
+|---|---|
+| 目标 | 数据类可在 GUI 注册/删除并持久化；`getQueryData()` 能被面板读到 |
+| 产出 | `ServerDataClass`、注册表、NBT 读写（§5.4）、`getQueryData()` 缓存快照（§5.5）、`BuiltinSource` + `ControllableSource`、最小 GUI（只读列表 + 启停） |
+| 验收 | 注册一个指向自家 `test_block` TE 的数据类 → 面板用**现有 `Query Block` 节点**（路径 1）绑定核心单元后，下拉出现该名字并能读到值；重登世界后注册表仍在 |
+
+### P2 —— 轮询引擎 + 算力/散热组网
+
+| 项 | 内容 |
+|---|---|
+| 目标 | 周期轮询、聚合、失效剔除；算力随计算单元数量变化；TU 随换热器存在而变化 |
+| 产出 | `PollEngine`（§5.3）、`detectComputeUnits`/`collectHeatTargets`（§4.4）、容量公式（§4.1）、状态机、`ServerDataClass.agg` 全部算子、热衰减 |
+| 验收 | ① 放 1 个核心 + 1 个计算单元（接在 SIDE 面）→ 数据类上限按公式上升；② 计算单元接在 FRONT/BACK 面 → **不计入**；③ 接力：核心 SIDE 接 A、A 的 SIDE 再接 B → 2 个都计入；④ 第 5 个计算单元不计入（`computeSlots = 4`）；⑤ 拆掉源后数据类变红而不崩 |
+
+### P3 —— 电力与换热
+
+| 项 | 内容 |
+|---|---|
+| 目标 | 核心单元六面接电即工作；换热器消耗 COOLABLE 流体带走 TU |
+| 产出 | `IEnergyReceiverMK2` 实现 + `getConPos()` 六邻 + `getReceiverSpeed` 覆写；`IHeatSource`；换热器双罐 + `FT_Coolable` 消费 + `diffusion` 抽热；FE 桥接 |
+| 验收 | ① 用 HBM 电缆从底部/顶部/侧面供电都能充能；② 用 FE 线缆（如 Mekanism/GT）也能充能（验证 `NTMEnergyCapabilityWrapper` 生效）；③ 换热器里灌 `HEAVYWATER_HOT`/`COOLANT_HOT` 等任意 COOLABLE 流体能降温并产出 `coolsTo`；④ 拔掉换热器 → 核心单元过热 → 状态转为 `THROTTLED` → `HALTED`，轮询停止 |
+
+### P4 —— GUI 完整化 + 网络
+
+| 项 | 内容 |
+|---|---|
+| 目标 | 完整的注册表/派发组编辑界面，服务端强校验 |
+| 产出 | `ContainerITServer` + `GuiITServer`（§7.1）、`NBTControlPacket` 复用（§7.3）、`ServerDispatchGroup`、权限（§7.4） |
+| 验收 | 全部编辑动作经 `receiveControl` 生效；伪造超上限/非法周期/未注册事件名的包被服务端拒绝且不崩 |
+
+### P5 —— 自由发送 + 自定义节点（路径 2）
+
+| 项 | 内容 |
+|---|---|
+| 目标 | 面板能"选择服务器数据类"并能"按目标集合派发" |
+| 产出 | `ServerEvents` 注册（§6.1）、`NodeServerQuery`/`NodeServerDispatch`、M1 + M2 + M4 三条 Mixin（§6.2）、派发限流与防环（§6.3） |
+| 验收 | ① 编程界面添加菜单里能看到并添加两个新节点；② 节点下拉列出核心单元的数据类；③ 用 `Server Dispatch` 节点向静态坐标表派发 `rbmk_ctrl_set_level` 能真实驱动 RBMK 控制棒；④ 保存/重载世界后面板程序仍能读回这两个节点（M1 生效）；⑤ 事件名非法时面板不崩 |
+
+### P6 —— RBMK 控制台聚合 + OpenComputers
+
+| 项 | 内容 |
+|---|---|
+| 目标 | 两类外部生态完整可用 |
+| 产出 | `RbmkConsoleSource`（§6.4）、OC 组件与全部方法（§6.5） |
+| 验收 | ① 数据类可读 `rbmk.temp.avg` 等复合字段；② OC 计算机 `component.list()` 能看到 `ntmit_server`，`getValue`/`dispatch` 可用 |
+
+### P7 —— 打磨
+
+| 项 | 内容 |
+|---|---|
+| 目标 | 上线质量 |
+| 产出 | i18n 补全（§8.2）、配置项（§4.1 数值）、上限与限流自查、失效重连策略、`README.md` 增补（新方块 + 新前置 MixinBooter + 面板存档警告）、TESR 评估结论 |
+| 验收 | 全新世界 + 老存档（含既有 `test_block`/`test_multiblock`）都能加载；`gradlew.bat build` 与 `runClient` 无 `ntm-it` 域报错 |
+
+## 10. 测试与验收
+
+### 10.1 必跑命令
+
+```powershell
+cd 'D:\new mod'
+.\gradlew.bat compileJava          # 快速编译验证
+.\gradlew.bat build                # 产出 build\libs\ntm-it-1.0.0.jar
+.\gradlew.bat runClient            # 开发客户端（HBM + 本附属 + MixinBooter）
+```
+
+> PowerShell 对 Gradle 成功运行也可能报 `exit code 1`（警告走 stderr）→ **以 `BUILD SUCCESSFUL` 为准**（`README.md`）。
+
+### 10.2 日志检查规则
+
+```powershell
+  # 只看本模组的域，避免被 HBM 自身的噪声淹没
+Select-String -Path run\client\logs\latest.log -Pattern 'ntm-it' 
+Select-String -Path run\client\logs\latest.log -Pattern 'Mixin apply failed|was not found|mixin'
+Select-String -Path run\client\logs\latest.log -Pattern 'JsonParse|Unknown property|Unable to load definition|MissingVariantException|domain ntm-it'
+```
+
+| 现象 | 判定 |
+|---|---|
+| `Mixin apply failed` | P0.5/P5 失败，必须处理 |
+| `MissingVariantException`（域 `ntm-it`） | blockstate 漏了变体（§4.5 表） |
+| `JsonParse` | 手写 JSON 语法错误 → `Get-Content x.json -Raw \| ConvertFrom-Json` 预先校验 |
+| `ClassNotFoundException: GradleWorkerMain` | 环境问题（守护进程 JVM ≠ toolchain），见 `README.md` |
+
+### 10.3 场景用例表（游戏内）
+
+| # | 场景 | 期望 |
+|---|---|---|
+| T1 | 核心单元朝四个方向放置 | 核心 meta = 12/13/14/15，模型/朝向正确 |
+| T2 | 放置时上方两格被占 | 放置失败并退物（`BlockDummyable` 原生行为） |
+| T3 | 拆中间格 / 顶格 / 核心 | 三种都导致整柱消失；不掉落假块 |
+| T4 | 计算单元接 SIDE / FRONT / BACK | 只有 SIDE 计入算力 |
+| T5 | 接力链：核心→A→B | A、B 都计入；链成环不死循环 |
+| T6 | 5 个计算单元 | 只计 4 个（`computeSlots`） |
+| T7 | 换热器接核心 BACK / 计算单元 BACK | 都参与散热 |
+| T8 | 换热器灌任意 COOLABLE 流体 | 降温 + 产出 `coolsTo` |
+| T9 | 无换热器 | 过热 → 降频 → 停机 |
+| T10 | 断电（六面都断开） | 状态转 `UNDER_POWER`，恢复供电后自愈 |
+| T11 | 用 FE 线缆供电 | 可充能（HE↔FE） |
+| T12 | 面板 `Query Block` 读数据类（路径 1） | 下拉有名字，值正确 |
+| T13 | 面板 `Server Query` 读数据类（路径 2） | 同上，且含状态色 |
+| T14 | `Server Dispatch` 派发 `rbmk_ctrl_set_level` | RBMK 控制棒真实动作 |
+| T15 | 派发到已注销设备 / 非法事件名 | 不崩，返回失败计数 |
+| T16 | 源被拆 | 数据类变红，条目保留；源放回后自动恢复 |
+| T17 | 源所在区块卸载 | 跳过而不崩；区块载入后恢复 |
+| T18 | 面板存档含我们的节点，然后移除本模组 | **已知会 NPE**（§2.3 L5）→ 只在文档层面记录，不作为缺陷 |
+| T19 | 老存档（既有两方块）加载 | 无回归 |
+| T20 | OC：`getValue` / `dispatch` | 正常返回 |
+
+## 11. 风险与 ADR（决策记录）
+
+### 11.1 风险清单
+
+| ID | 风险 | 影响 | 缓解 |
+|---|---|---|---|
+| R1 | **MixinBooter 成为硬前置** | 未安装则模组完全不加载 | 发布说明写明；`required-after:mixinbooter` 让 FML 给玩家明确报错；README 增补安装要求 |
+| R2 | HBM 升级导致 Mixin 目标失配 | 路径 2 失效 | 只用公开 API 撑住路径 1；Mixin 全部"失败可降级"；目标只选 HBM 自有类（MCP 名，免 refmap） |
+| R3 | 面板存档前向兼容不可逆（§2.3 L5） | 移除本模组会 NPE | 文档警告 + M4 占位对象 + 建议玩家先清空面板 |
+| R4 | 每 tick 轮询造成卡服 | TPS 下降 | 分桶周期 + `maxPollsPerTick` + `getQueryData()` 只读缓存 + 组网只在脏标记时重算 |
+| R5 | 数据类数量爆炸（玩家/OC 无节制注册） | 内存/性能 | `dataClassLimit` 与 `computeSlots` 挂钩；OC 侧服务端强校验 |
+| R6 | 派发被滥用成"全体遥控器" | 玩法/服务器安全 | 目标数上限、每 tick 次数上限、权限门槛（ADR-8） |
+| R7 | 三个柱方块与既有 `test_multiblock` 语义重叠 | 认知混乱 | README/SERVER_PLAN 都注明：`test_multiblock` 是"手写多方块示例"，新柱是"正式实现"；不删除既有内容（C4） |
+| R8 | `FT_Coolable` 流体在玩家配置里被删/改 | 换热器不工作 | 运行时判空 + `eff <= 0` 视为不可用，并 GUI/OC 报"无有效冷却液" |
+| R9 | 换热器 `diffusion` 取值不当导致散热过强/过弱 | 玩法失衡 | 数值集中在一处（§4.1 ADR-6）+ 配置可调 |
+| R10 | 区块边界处组网（跨区块相邻柱） | 行为不一致 | `world.getTileEntity` 对未加载区块返回 `null` → 视为"未连接"，GUI 提示；不做强制加载 |
+
+### 11.2 ADR（决策记录）
+
+**ADR-1 结构载体：`BlockDummyable`（3 参构造）而非手写多方块**
+- 背景：需求是"1×3×1 柱 + 仿 RBMK + 可模块化阵列"。
+- 选项：(a) 手写（照 `test_multiblock`）；(b) `BlockDummyable` 2 参（照 `RBMKBase`）；(c) `BlockDummyable` 3 参。
+- 决策：**(c)**。
+- 理由：手写方案的 4 bit 元数据放不下"朝向 + 多格角色"，且要自己写放置/拆除/碰撞/高亮；2 参会被基类 `bakeModel` 覆盖模型（`BlockDummyable.java:541-569` + `ModEventHandlerClient.java:445`）；3 参构造既保留 dummyable 的全部机制又交出模型控制权（`:70-77`）。
+- 后果：模型必须自己穷举 16 个 meta 变体；`getRenderType`/`isOpaqueCube`/`shouldSideBeRendered` 必须覆写。
+
+**ADR-2 柱的朝向：核心 meta 记录玩家水平朝向（而非照抄 RBMK 的常量 NORTH）**
+- 背景：需求要求 SIDE/BACK 面 → 柱必须有 FACING。
+- 决策：`getDirModified` 返回玩家水平朝向 → 核心 meta ∈ 12-15。
+- 理由：`findCoreRec` 对 12-15 均判定为核心（`:160-168`）；`transformMeta` 对 ≥12 走核心分支（`:519-539`）；损失仅"竖向朝向"（本就无意义）。
+- 后果：blockstate 需要四向核心变体（可与 `_mid/_top` 共用几何，只换贴图）。
+
+**ADR-3 RBMK 控制台数据获取：一期"特例直读"，二期再评估 M5**
+- 背景：`TileEntityRBMKConsole` 不是 `IControllable`（`:43`），无法被面板直接查询。
+- 决策：一期由 `RbmkConsoleSource` 直读 `columns[]`；M5（Mixin 让它实现 `IControllable`）列入二期。
+- 理由：直读零 Mixin 依赖、风险最低；M5 会让"任何人"都能在面板里选它，语义面更大，需要单独评估。
+
+**ADR-4 不新增控制面板控件类型（N1）**
+- 决策：一期只用现有控件（按钮/开关/数显/表盘）。
+- 理由：新增控件需要动 `ControlRegistry` 的私有 `classToName`（`:14`）并重跑 `init()`（`:19-44`），属高风险低收益；`IControllable` + 事件已能完成全部交互。
+
+**ADR-5 接电优先级取 `HIGH`**
+- 背景：`ConnectionPriority` 默认 `NORMAL`（`IEnergyReceiverMK2.java:119-121`）。
+- 决策：核心单元 `getPriority()` 返回 `HIGH`。
+- 理由：服务器是"基础设施"，断电即停摆；`HIGH` 不至于抢过 `HIGHEST`（一般为紧急设备）。
+- 后果：`PowerNetMK2` 分配时会优先满足（`PowerNetMK2.java:71-78`）。
+
+**ADR-6 数值集中管理**
+- 决策：`computeSlots`/`computePoints`/`classesPerPoint`/`coreBaseSlots`/`intervalPerPoint`/`coreIdleHeat`/`heatPerTask`/`maxHeat`/`maxPower`/`maxPollsPerTick`/`dispatchTargetLimit`/`dispatchPerTick` 全部集中在 `ServerConfig`（静态 + 可被 `server.cfg` 覆盖），**禁止散落魔法数字**。
+- 理由：需求 R2.3 明确"变体数据可能不一样"→ 数值必须是数据而非代码逻辑。
+
+**ADR-7 计算单元/换热器一期不接电**
+- 决策：只有核心单元接电并统一结算耗电。
+- 理由：降低布线复杂度；若要各自接电，只需让两个 TE 也实现 `IEnergyReceiverMK2`（接口本身就是默认方法为主，成本可控）。
+
+**ADR-8 权限**
+- 决策：`hasPermission` 保持宽松（与 `TileEntityControlPanel.java:182-184` 一致），但**注册/删除数据类、编辑派发组、执行派发**需要 `canUseCommand(2, "")`（OP 级）。
+- 理由：读数据类无副作用；写侧会驱动世界设备，属"遥控器"级权限。
+
+**ADR-9 值变化不主动推送**
+- 决策：`markDirty()` 而不发包；面板按 tick 主动读。
+- 理由：`NodeQueryBlock.evaluate()` 每 tick 调用，面板侧本来就会拉取；推送只增加带宽（对照 HBM 的 `ControlPanelUpdatePacket` 只在面板变量变化时发，`TileEntityControlPanel.java:125-132`）。
+
+## 12. 附录
+
+### A. 类索引（本模组新增）
+
+```
+com.ntmit.blocks.BlockITServerCore            柱：核心单元
+com.ntmit.blocks.BlockITServerCompute         柱：计算单元
+com.ntmit.blocks.BlockITServerHeatExchanger   柱：热交换器
+com.ntmit.tileentity.TileEntityITServerCore           主控 TE
+com.ntmit.tileentity.TileEntityITServerCompute        算力 TE
+com.ntmit.tileentity.TileEntityITServerHeatExchanger  热汇 TE
+com.ntmit.server.ServerDataClass              数据类 POJO
+com.ntmit.server.ServerDispatchGroup          派发组 POJO
+com.ntmit.server.ServerConfig                 全部数值常量（ADR-6）
+com.ntmit.server.PollEngine                   轮询引擎
+com.ntmit.server.IServerSource                源适配接口
+com.ntmit.server.ControllableSource           IControllable 适配
+com.ntmit.server.RbmkConsoleSource            RBMK 控制台直读适配
+com.ntmit.server.BuiltinSource                内建源
+com.ntmit.control.NodeServerQuery             面板节点（路径 2）
+com.ntmit.control.NodeServerDispatch          面板节点（路径 2）
+com.ntmit.lib.ServerEvents                    ControlEvent 注册
+com.ntmit.mixin.MixinNode                     M1
+com.ntmit.mixin.MixinSubElementNodeEditor     M2（client）
+com.ntmit.mixin.MixinNodeSystem               M4
+com.ntmit.inventory.container.ContainerITServer
+com.ntmit.inventory.gui.GUITITServer
+```
+
+### B. NBT 键索引（`TileEntityITServerCore`）
+
+`server_version`, `tick`, `power`, `heat`,
+`classes.count` / `classes.c<i>.{id,name,type,kind,px,py,pz,hasPos,field,agg,period,enabled,unit}`,
+`dispatchGroups.count` / `dispatchGroups.g<i>.{id,name,mode,count,p<j>x,p<j>y,p<j>z}`,
+`panel`（预留）
+
+### C. 事件名索引
+
+| 事件名 | 方向 | `vars` | 注册位置 |
+|---|---|---|---|
+| `ntmit_server_read` | 面板 → 服务器 | `index`（-1 = 全部） | `ServerEvents`（preInit） |
+| `ntmit_server_poll_now` | 面板 → 服务器 | 无 | 同上 |
+| `ntmit_server_dispatch` | 面板 → 服务器 | `event`(str), `x`,`y`,`z` | 同上 |
+| `ntmit_server_data` | 服务器 → 面板 | `name`, `value` | 同上（一期只声明不主动发） |
+| HBM 原生（我们可派发） | 服务器 → 任意 | 见 `ControlEvent.init()`（`ControlEvent.java:90-106`） | HBM 本体 |
+
+### D. HBM 关键 file:line 速查
+
+> 根路径：`D:\Hbm-s-Nuclear-Tech-CE-1.0.0.0\src\main\java\com\hbm\`
+
+| 主题 | 位置 |
+|---|---|
+| dummyable 构造器（3 参 = 不进 INSTANCES / 不进 ALL_BLOCKS） | `blocks/BlockDummyable.java:60-77` |
+| 元数据语义（offset=10 / extra=6） | `blocks/BlockDummyable.java:79-88` |
+| 假块自愈（neighborChanged / updateTick） | `blocks/BlockDummyable.java:92-128` |
+| findCore / findCoreRec（核心判定 = meta-6 越界） | `blocks/BlockDummyable.java:130-178` |
+| 放置流程与退物 | `blocks/BlockDummyable.java:181-239` |
+| fillSpace / makeExtra / removeExtra | `blocks/BlockDummyable.java:273-275,278-292,295-309` |
+| 拆除逻辑（假块连坐核心） | `blocks/BlockDummyable.java:316-338` |
+| 渲染三个开关（基类） | `blocks/BlockDummyable.java:401-428` |
+| bakeModel（会覆盖模型，必须绕开） | `blocks/BlockDummyable.java:541-569` |
+| getStateMapper（全状态 → `normal`） | `blocks/BlockDummyable.java:583-592` |
+| 空间检查 / 填空间 / 旋转表（SOUTH 原样） | `handler/MultiblockHandlerXR.java:21-53,55-107,139-160` |
+| RBMK 柱参照实现（维度/朝向/顶格） | `blocks/machine/rbmk/RBMKBase.java:38,52-59,131-144` |
+| RBMK 柱高 dial | `tileentity/machine/rbmk/RBMKDials.java:70-72,303` |
+| RBMK 渲染类型 = MODEL（非 TESR） | `blocks/machine/rbmk/RBMKRod.java:43-45` |
+| RBMK 盖子 TESR（我们一期不做） | `render/tileentity/RenderRBMKLid.java:24,35` |
+| 事件注册表 / 注册 / init | `inventory/control_panel/ControlEvent.java:11,86-88,90-106` |
+| 事件系统：注册 / 订阅 / 广播 | `inventory/control_panel/ControlEventSystem.java:23-48,54-125` |
+| 事件系统 tick 与 worldUnload | `inventory/control_panel/ControlEventSystem.java:133-146` |
+| IControllable | `inventory/control_panel/IControllable.java:10-23` |
+| 控件绑定（linked / connectedSet） | `inventory/control_panel/SubElementLinker.java:92-132` |
+| 事件类型累积 | `inventory/control_panel/SubElementEventEditor.java:45-91` |
+| 节点添加菜单（硬编码 → M2） | `inventory/control_panel/SubElementNodeEditor.java:87-140` |
+| nodeFromNBT（硬编码 switch → M1） | `inventory/control_panel/nodes/Node.java:79-125` |
+| Query Block 节点（数据类下拉的来源） | `inventory/control_panel/nodes/NodeQueryBlock.java:18-97` |
+| Broadcast 节点（事件派发范式） | `inventory/control_panel/nodes/NodeEventBroadcast.java:50-97` |
+| NodeSystem 读写 / 求值 | `inventory/control_panel/NodeSystem.java:85-139,377-398` |
+| ControlPanel 读写与变量 | `inventory/control_panel/ControlPanel.java:99-169` |
+| Control（connectedSet / 节点映射 / 变量） | `inventory/control_panel/Control.java:21-30,82-88,98-194` |
+| ControlRegistry（私有 classToName → M3） | `inventory/control_panel/ControlRegistry.java:13-68` |
+
+| DataValue / DataType | `inventory/control_panel/DataValue.java:8-52` |
+| 面板 TE（GUI/网络/OC 范式） | `tileentity/machine/TileEntityControlPanel.java:42-56,125-216,267-300` |
+| 客户端→服务端 NBT 包（复用） | `packet/toserver/NBTControlPacket.java:17-104` |
+| 面板值同步包（对照） | `packet/toclient/ControlPanelUpdatePacket.java:23-130` |
+| 网络通道与包注册表 | `main/NetworkHandler.java:118-124`、`packet/PacketDispatcher.java:13-116` |
+| IControlReceiver / IGUIProvider | `interfaces/IControlReceiver.java:10-17`、`tileentity/IGUIProvider.java:11-16` |
+| TU 契约（getHeatStored/useUpHeat） | `api/tile/IHeatSource.java:3-12` |
+| 抽热范式（含 maxHeat clamp） | `tileentity/machine/oil/TileEntityMachineCoker.java:192-215` |
+| 抽热范式（简化 + 自衰减） | `tileentity/machine/TileEntitySawmill.java:212-226` |
+| FT_Coolable（coolsTo/amountReq/heatEnergy/效率） | `inventory/fluid/trait/FT_Coolable.java:14-88` |
+| COOLABLE 消费范式 | `tileentity/machine/TileEntityMachineTurbine.java:129-133` |
+| 流体特性配置文件（玩家可扩展） | `run/client/config/hbm/_hbmFluidTraits.json` |
+| 电力三件套（getPower/setPower/getMaxPower） | `api/energymk2/IEnergyHandlerMK2.java:11-13` |
+| 接电契约与 trySubscribe / getReceiverSpeed | `api/energymk2/IEnergyReceiverMK2.java:27-134` |
+| 面级接入（canConnect，默认六面全通） | `api/energymk2/IEnergyConnectorMK2.java:13-15` |
+| 供电契约与 tryProvide | `api/energymk2/IEnergyProviderMK2.java:26-119` |
+| 电网优先级分配算法 | `api/energymk2/PowerNetMK2.java:48-90` |
+| FE 桥接 wrapper | `capability/NTMEnergyCapabilityWrapper.java:19-43` |
+| 机器基类（enableEnergyWrapper / capability） | `tileentity/TileEntityMachineBase.java:37,51-60,242-291` |
+| 加载态基类（满足 ILoadedTile） | `tileentity/TileEntityLoadedBase.java:13-26` |
+| 接电范式（getConPos + trySubscribe） | `tileentity/machine/TileEntityMachineAssemblyMachine.java:53-54,104-108,215-222` |
+| TL TE 按 meta 分支范式 | `blocks/machine/MachineAssemblyMachine.java:23-27` |
+| OC 组件接口（OCComponent） | `handler/CompatHandler.java:206-252` |
+| RBMK 控制台（columns/ColumnType/ScreenType） | `tileentity/machine/rbmk/TileEntityRBMKConsole.java:43-45,89-98,109+,594,604,614-622,700` |
+| 动态模型管线（为何必须绕开） | `items/IDynamicModels.java:28-33,46-57`、`main/ModEventHandlerClient.java:322-323,440-445` |
+| 假块 TE（我们不复用） | `tileentity/machine/TileEntityDummy.java:12-28` |
+
+### E. MixinBooter 事实速查（✅ 已解包验证）
+
+| 项 | 值 |
+|---|---|
+| 坐标 | `curse.maven:mixin-booter-419286:7049694`（与 HBM 同款；**已在本地 Gradle 缓存**） |
+| modid / 版本 / MC | `mixinbooter` / `10.7` / `1.12.2` |
+| 是否内含 Mixin 库 | ✅ 含 `org/spongepowered/asm/mixin/Mixin.class`、`IMixinConfigPlugin` 等 |
+| manifest | `TweakClass: org.spongepowered.asm.launch.MixinTweaker`；`FMLCorePlugin: zone.rong.mixinbooter.MixinBooterPlugin`；`FMLCorePluginContainsFMLMod: true` |
+| 为何必须覆盖默认坐标 | `zone.rong:mixinbooter:10.6`（`build.gradle:85` 默认）在 GTNH Nexus `public` 仓库**不存在**（REST 搜索返回空） |
+| HBM 本体是否保证它 | ❌ 不保证：HBM 的 `mcmod.info` 只依赖 `mod_MinecraftForge`；MixinBooter 是其 `runtimeOnlyNonPublishable`（`dependencies.gradle:59`） |
+
+## 13. 后续路线（明确"不做但留口"）
+
+| 编号 | 事项 | 触发条件 |
+|---|---|---|
+| F1 | 柱高可配置（照 `RBMKDials.getColumnHeight` 的 dial 思路） | 玩家希望更高/更矮 |
+| F2 | 核心单元 TESR 动态面板（实时值/状态灯） | ADR-1 / N2 被推翻 |
+| F3 | 新增控制面板控件类型（M3） | 需要"服务器专用仪表" |
+| F4 | M5：让 `TileEntityRBMKConsole` 实现 `IControllable` | 去掉 §6.4 的"特例直读" |
+| F5 | 计算单元/换热器各自接电（ADR-7 反转） | 需要更复杂拓扑/独立停机 |
+| F6 | 跨维度轮询与派发（N3） | 仅在出现强需求时评估 |
+| F7 | 值变化主动推送 + 面板实时预览 | 需要"示波器式"体验 |
+| F8 | GUI 诊断页：列出引用了本数据类的面板 | §5.6 的可选诊断 |
+| F9 | 与 `MESSAGE.md` §6 的 UNINOS 网络打通（服务器作为"数据总线"节点） | 二期玩法扩展 |
+
+---
+
+> **文档状态**：全部决策已闭合，无 TBD 项。修改本文件时请同步更新 §11.2 的 ADR 与 §9 的阶段验收。
+
+
+

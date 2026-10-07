@@ -1,0 +1,20 @@
+{
+	"variants": {
+		"meta=0":  { "model": "ntm-it:server_compute_mid" },
+		"meta=1":  { "model": "ntm-it:server_compute_mid" },
+		"meta=2":  { "model": "ntm-it:server_compute_mid" },
+		"meta=3":  { "model": "ntm-it:server_compute_mid" },
+		"meta=4":  { "model": "ntm-it:server_compute_mid" },
+		"meta=5":  { "model": "ntm-it:server_compute_mid" },
+		"meta=6":  { "model": "ntm-it:server_compute_top" },
+		"meta=7":  { "model": "ntm-it:server_compute_top" },
+		"meta=8":  { "model": "ntm-it:server_compute_top" },
+		"meta=9":  { "model": "ntm-it:server_compute_top" },
+		"meta=10": { "model": "ntm-it:server_compute_top" },
+		"meta=11": { "model": "ntm-it:server_compute_top" },
+		"meta=12": { "model": "ntm-it:server_compute_core" },
+		"meta=13": { "model": "ntm-it:server_compute_core", "y": 180 },
+		"meta=14": { "model": "ntm-it:server_compute_core", "y": 270 },
+		"meta=15": { "model": "ntm-it:server_compute_core", "y": 90 }
+	}
+}

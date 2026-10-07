@@ -1,0 +1,35 @@
+//file:noinspection DependencyNotationArgument
+// TODO remove when fixed in RFG ^
+/*
+ * Add your dependencies here. See HBM's own dependencies.gradle for the full configuration list.
+ *
+ * HBM's Nuclear Tech - Community Edition publishes no API jar (its `customMavenPublishUrl` is
+ * empty), so an addon has to pull in the whole dev jar directly. See MESSAGE.md section 5.2.
+ */
+dependencies {
+    // HBM CE, the release the players actually run (2026-09, decision): the mod is built against the
+    // official 2.5.0.5 jar rather than against an HBM dev tree, because the API this addon needs only
+    // exists there - `com.hbm.api.redstoneoverradio` (IRORInfo / IRORValueProvider / IRORInteractive),
+    // which is what the server connector reads its data class enum from, and what the RBMK-style
+    // reader/controller torches are built on, arrived somewhere between 1.0.0.0 and 2.5.0.5.
+    //
+    // It is a release jar, so it is SRG-named and `rfg.deobf()` has real work to do (unlike the old
+    // 1.0.0.0 dev jar, which was already MCP-named). `devOnlyNonPublishable` is the documented
+    // configuration for a local file (see the header of this file): compiletime and in this project's
+    // own runClient runs, but not published as a Maven dependency of this mod.
+    devOnlyNonPublishable rfg.deobf(files("libs/NTM-CE-1.12.2-2.6.1.0.jar"))
+
+    // 2.5.0.5 requires CTM (ConnectedTexturesMod) as a hard dependency - FML refuses to load HBM at all
+    // without it ("Mod hbm requires [ctm]"), which is a change from the 1.0.0.0 dev jar this project used
+    // to compile against. Our own code never touches CTM, so it is a runtime-only dependency, exactly as
+    // the NTM-Cursed addon declares it.
+    runtimeOnlyNonPublishable rfg.deobf(files("libs/CTM-MC1.12.2-1.0.2.31.jar"))
+
+    // HBM declares OpenComputers with `implementation`, so it is NOT transitively visible to an
+    // addon - even though HBM's own public types reference it. TileEntityRBMKConsole.ColumnType and
+    // TileEntityRBMKControlManual both touch li.cil.oc.api.network.SimpleComponent, and without the
+    // type on the classpath javac refuses those references with "cannot access SimpleComponent".
+    // compileOnly is all that is needed: NTM-IT never calls an OpenComputers API (its console has
+    // no OC interface at all), and the runtime copy already ships with HBM.
+    compileOnly rfg.deobf("curse.maven:opencomputers-223008:6608365")
+}

@@ -1,0 +1,16 @@
+{
+	"variants": {
+		"facing=north,role=0": { "model": "ntm-it:test_multiblock" },
+		"facing=north,role=1": { "model": "ntm-it:test_multiblock" },
+		"facing=north,role=2": { "model": "ntm-it:test_multiblock" },
+		"facing=east,role=0":  { "model": "ntm-it:test_multiblock", "y": 90 },
+		"facing=east,role=1":  { "model": "ntm-it:test_multiblock", "y": 90 },
+		"facing=east,role=2":  { "model": "ntm-it:test_multiblock", "y": 90 },
+		"facing=south,role=0": { "model": "ntm-it:test_multiblock", "y": 180 },
+		"facing=south,role=1": { "model": "ntm-it:test_multiblock", "y": 180 },
+		"facing=south,role=2": { "model": "ntm-it:test_multiblock", "y": 180 },
+		"facing=west,role=0":  { "model": "ntm-it:test_multiblock", "y": 270 },
+		"facing=west,role=1":  { "model": "ntm-it:test_multiblock", "y": 270 },
+		"facing=west,role=2":  { "model": "ntm-it:test_multiblock", "y": 270 }
+	}
+}
