@@ -841,7 +841,6 @@ def getManifestAttributes() {
 
     if (usesMixins.toBoolean()) {
         attributes['ForceLoadAsMod'] = !containsMixinsAndOrCoreModOnly.toBoolean()
-        attributes['MixinConfigs'] = "mixins.ntm-it.early.json"
     }
     return attributes
 }
