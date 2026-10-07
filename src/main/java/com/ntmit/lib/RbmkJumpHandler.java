@@ -63,6 +63,19 @@ public class RbmkJumpHandler {
 	public static final int STEAM_VENT_THRESHOLD = 1600000;
 	public static final int VENT_INTERVAL = 10;
 	public static final int PRESSURE_BURST_THRESHOLD = 2000000;
+	public static final int HOTSTEAM_BURST_THRESHOLD = 1900000;
+	public static final int SUPERHOTSTEAM_BURST_THRESHOLD = 1700000;
+	public static final int ULTRAHOTSTEAM_BURST_THRESHOLD = 1400000;
+
+	public static int burstThreshold(com.hbm.inventory.fluid.FluidType type) {
+		if (type == null) return PRESSURE_BURST_THRESHOLD;
+		com.hbm.inventory.fluid.FluidType dry = com.ntmit.fluids.NTMITFluids.isMixture(type) ? com.ntmit.fluids.NTMITFluids.dryOf(type) : type;
+		if (dry == null) return PRESSURE_BURST_THRESHOLD;
+		if (dry == com.hbm.inventory.fluid.Fluids.ULTRAHOTSTEAM) return ULTRAHOTSTEAM_BURST_THRESHOLD;
+		if (dry == com.hbm.inventory.fluid.Fluids.SUPERHOTSTEAM) return SUPERHOTSTEAM_BURST_THRESHOLD;
+		if (dry == com.hbm.inventory.fluid.Fluids.HOTSTEAM) return HOTSTEAM_BURST_THRESHOLD;
+		return PRESSURE_BURST_THRESHOLD;
+	}
 	public static final int STEAM_JUMP_TARGET_MIN = 160;
 	public static final int STEAM_JUMP_TARGET_MAX = 1100;
 	public static final float STEAM_JUMP_CURVE = 4.0F;
@@ -1469,7 +1482,7 @@ public class RbmkJumpHandler {
 		World world = column.getWorld();
 		if (world == null || world.isRemote) return false;
 		int reasim = column.reasimSteam;
-		double tank = 0D;
+		double ratio = 0.0D;
 		BlockPos pos = column.getPos();
 		for (int dx = -NEIGHBOUR_RADIUS; dx <= NEIGHBOUR_RADIUS; dx++) {
 			for (int dz = -NEIGHBOUR_RADIUS; dz <= NEIGHBOUR_RADIUS; dz++) {
@@ -1477,10 +1490,13 @@ public class RbmkJumpHandler {
 				if (!world.isBlockLoaded(scan)) continue;
 				TileEntity te = world.getTileEntity(scan);
 				if (te instanceof TileEntityRBMKBase base) reasim = Math.max(reasim, base.reasimSteam);
-				if (te instanceof TileEntityRBMKBoiler boiler) tank = Math.max(tank, (double) boiler.steam.getFill());
+				if (te instanceof TileEntityRBMKBoiler boiler) {
+					int threshold = burstThreshold(boiler.steam.getTankType());
+					if (threshold > 0) ratio = Math.max(ratio, (double) boiler.steam.getFill() / (double) threshold);
+				}
 			}
 		}
-		return reasim < REASIM_BURST_THRESHOLD && tank < (double) PRESSURE_BURST_THRESHOLD;
+		return reasim < REASIM_BURST_THRESHOLD && ratio < 1.0D;
 	}
 
 	public static void overheatFlames(World world, BlockPos base, int height) {

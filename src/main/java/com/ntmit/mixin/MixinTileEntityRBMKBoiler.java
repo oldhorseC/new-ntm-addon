@@ -87,7 +87,7 @@ public abstract class MixinTileEntityRBMKBoiler {
 			RbmkJumpHandler.pollControlRods(world, boiler.getPos());
 			boolean locked = this.ntmitBurstDelay > 0 && RbmkJumpHandler.reactorHasDigammaRod(world, boiler.getPos());
 			if (this.ntmitBurstDelay > 0) RbmkJumpHandler.pumpReactor(world, boiler.getPos(), this.ntmitBurstDelay);
-			if (this.steam.getFill() >= RbmkJumpHandler.PRESSURE_BURST_THRESHOLD) {
+			if (this.steam.getFill() >= RbmkJumpHandler.burstThreshold(this.steam.getTankType())) {
 				if (RbmkJumpHandler.az5ForcesBurst(world, boiler.getPos())) {
 					RbmkJumpHandler.az5Consume();
 					this.ntmitBurstDelay = 0;
