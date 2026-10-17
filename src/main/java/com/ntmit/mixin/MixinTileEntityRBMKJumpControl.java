@@ -2,6 +2,7 @@ package com.ntmit.mixin;
 
 import com.hbm.tileentity.machine.rbmk.TileEntityRBMKBase;
 import com.ntmit.lib.RbmkJumpHandler;
+import com.ntmit.lib.RbmkSteamCurve;
 
 import net.minecraft.world.World;
 
@@ -16,16 +17,15 @@ import java.lang.reflect.Field;
 @Mixin(value = TileEntityRBMKBase.class, priority = 1100)
 public class MixinTileEntityRBMKJumpControl {
 
+	@Unique private static final int NT_FORCED_DAMAGE = 19200;
+
 	@Unique private static Field ntmitDamageField;
 	@Unique private static Field ntmitFallingField;
 	@Unique private static Field ntmitHeightField;
-	@Unique private static boolean ntmitLogged;
-	@Unique private static long ntmitBudgetTick = Long.MIN_VALUE;
-	@Unique private static int ntmitBudgetUsed;
 
 	@Unique private int ntmitStoredDamage;
-	@Unique private int ntmitForcedDamage;
-	@Unique private int ntmitJumpCooldown;
+	@Unique private double ntmitTargetHeight;
+	@Unique private boolean ntmitHasTarget;
 	@Unique private boolean ntmitBoosting;
 	@Unique private boolean ntmitCycleActive;
 
@@ -35,53 +35,54 @@ public class MixinTileEntityRBMKJumpControl {
 		Field damageField = ntmitDamageField();
 		Field fallingField = ntmitFallingField();
 		if (damageField == null || fallingField == null) return;
-		World world = ((TileEntityRBMKBase) (Object) this).getWorld();
+		TileEntityRBMKBase te = (TileEntityRBMKBase) (Object) this;
+		World world = te.getWorld();
 		if (world == null || world.isRemote) return;
+		if (RbmkJumpHandler.isNativeJump(world, te.getPos())) {
+			this.ntmitBoosting = false;
+			this.ntmitCycleActive = false;
+			this.ntmitHasTarget = false;
+			return;
+		}
 		try {
 			int stored = damageField.getInt(this);
-			if (!this.ntmitCycleActive && this.ntmitJumpCooldown > 0) this.ntmitJumpCooldown--;
-			int span = RbmkJumpHandler.STEAM_JUMP_TARGET_MAX - RbmkJumpHandler.STEAM_JUMP_TARGET_MIN;
-			if (span <= 0) return;
-			float ramp = (float) (stored - RbmkJumpHandler.STEAM_JUMP_TARGET_MIN) / (float) span;
-			if (ramp <= 0.0F) {
-				if (!this.ntmitCycleActive) return;
-				ramp = 0.0F;
-			}
-			ramp = Math.min(ramp, 1.0F);
 			boolean falling = fallingField.getBoolean(this);
+			if (!this.ntmitCycleActive && stored <= 0) return;
+
 			this.ntmitStoredDamage = stored;
 			this.ntmitBoosting = true;
+
 			if (this.ntmitCycleActive && !falling) {
-				damageField.setInt(this, this.ntmitForcedDamage);
+				damageField.setInt(this, NT_FORCED_DAMAGE);
 				return;
 			}
 			if (this.ntmitCycleActive) {
 				this.ntmitCycleActive = false;
+				this.ntmitHasTarget = false;
+				int previous = (int) Math.round(this.ntmitTargetHeight * 1000.0D);
+				this.ntmitStoredDamage = stored > previous ? stored : 0;
+				damageField.setInt(this, this.ntmitStoredDamage);
+				return;
+			}
+
+			Field heightField = ntmitHeightField();
+			if (falling || (heightField != null && heightField.getDouble(this) > 0.0D)) {
+				this.ntmitStoredDamage = 0;
 				damageField.setInt(this, 0);
 				return;
 			}
-			if (this.ntmitJumpCooldown > 0) {
+
+			double target = Math.min(RbmkSteamCurve.damageToAmplitude(stored), RbmkJumpHandler.JUMP_HEIGHT_LIMIT);
+			if (target <= 0.0D) {
+				this.ntmitStoredDamage = 0;
 				damageField.setInt(this, 0);
 				return;
 			}
-			long time = world.getTotalWorldTime();
-			if (ntmitBudgetTick != time) {
-				ntmitBudgetTick = time;
-				ntmitBudgetUsed = 0;
-			}
-			if (ntmitBudgetUsed >= RbmkJumpHandler.STEAM_JUMP_MAX_PER_TICK) {
-				damageField.setInt(this, 0);
-				return;
-			}
-			ntmitBudgetUsed++;
-			this.ntmitForcedDamage = Math.round(RbmkJumpHandler.lerp((float) RbmkJumpHandler.STEAM_JUMP_MIN_DAMAGE, (float) RbmkJumpHandler.STEAM_JUMP_FORCED_DAMAGE, ramp * ramp));
+
+			this.ntmitTargetHeight = target;
+			this.ntmitHasTarget = true;
 			this.ntmitCycleActive = true;
-			this.ntmitJumpCooldown = Math.round(RbmkJumpHandler.lerp((float) RbmkJumpHandler.STEAM_JUMP_PERIOD_START, (float) RbmkJumpHandler.STEAM_JUMP_PERIOD_MIN, ramp));
-			damageField.setInt(this, this.ntmitForcedDamage);
-			if (!ntmitLogged) {
-				ntmitLogged = true;
-				RbmkJumpHandler.diag("jump control active, forcedDamage=" + this.ntmitForcedDamage + " period=" + this.ntmitJumpCooldown);
-			}
+			damageField.setInt(this, NT_FORCED_DAMAGE);
 		} catch (Throwable throwable) {
 			this.ntmitBoosting = false;
 		}
@@ -101,13 +102,16 @@ public class MixinTileEntityRBMKJumpControl {
 
 	@Inject(method = "leafia$jump", at = @At("RETURN"), require = 1, remap = false)
 	private void ntmit$limitJumpHeight(CallbackInfo ci) {
+		if (!this.ntmitHasTarget) return;
 		Field heightField = ntmitHeightField();
 		Field fallingField = ntmitFallingField();
 		if (heightField == null || fallingField == null) return;
 		try {
-			if (heightField.getDouble(this) <= RbmkJumpHandler.JUMP_HEIGHT_LIMIT) return;
-			heightField.setDouble(this, RbmkJumpHandler.JUMP_HEIGHT_LIMIT);
+			double height = heightField.getDouble(this);
+			if (height < this.ntmitTargetHeight) return;
+			heightField.setDouble(this, this.ntmitTargetHeight);
 			fallingField.setBoolean(this, true);
+			this.ntmitHasTarget = false;
 		} catch (Throwable throwable) {
 		}
 	}
@@ -139,7 +143,6 @@ public class MixinTileEntityRBMKJumpControl {
 			} catch (Throwable throwable) {
 			}
 		}
-		RbmkJumpHandler.diag("jump boost leak detected, meltdown vetoed");
 		ci.cancel();
 	}
 

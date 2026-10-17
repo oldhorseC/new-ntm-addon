@@ -13,14 +13,14 @@
     "MixinTileEntityRBMKJumpControl",
     "MixinTileEntityRBMKRod",
     "MixinTileEntityFan",
-    "MixinChunkLoadGuard",
-    "MixinTileEntityRBMKConsole"
+    "MixinChunkLoadGuard"
   ],
   "client": [
     "MixinGUIRBMKBoiler",
     "MixinGUIRBMKConsole",
     "MixinParticleGasFlame",
-    "MixinParticleJumpingRBMK"
+    "MixinParticleJumpingRBMK",
+    "MixinWorldProviderNTM"
   ],
   "server": []
 }

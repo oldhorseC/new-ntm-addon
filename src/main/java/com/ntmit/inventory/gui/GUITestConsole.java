@@ -241,7 +241,6 @@ public class GUITestConsole extends GuiScreen {
 
 				NBTTagCompound control = new NBTTagCompound();
 				control.setDouble("level", 0);
-				control.setBoolean("ntmit_az5", true);
 
 				for (int j = 0; j < console.columns.length; j++) {
 					if (console.columns[j] != null && console.columns[j].type == ColumnType.CONTROL)

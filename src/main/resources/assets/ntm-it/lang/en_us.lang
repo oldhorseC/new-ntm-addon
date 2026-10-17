@@ -151,3 +151,14 @@ advancements.ntm-it.digamma_zeroing.description=The abyss is looking for you, §
 # boiler steam gauge warnings
 gui.ntm-it.boiler.caution=Caution
 gui.ntm-it.boiler.warning=Warning
+
+entity.rbmk_blue_light.name=RBMK Blue Light
+entity.ntm-it.rbmk_blue_light.name=RBMK Blue Light
+item.spawn_egg.entity.rbmk_blue_light.name=RBMK Blue Light
+item.spawn_egg.entity.ntm-it.rbmk_blue_light.name=RBMK Blue Light
+entity.rbmk_blue_light_marker.name=RBMK Blue Light Marker
+entity.ntm-it.rbmk_blue_light_marker.name=RBMK Blue Light Marker
+item.spawn_egg.entity.rbmk_blue_light_marker.name=RBMK Blue Light Marker
+item.spawn_egg.entity.ntm-it.rbmk_blue_light_marker.name=RBMK Blue Light Marker
+
+item.ntm-it.dyatlov_steam_device.name=Dyatlov Rapid Steam Explosion Device

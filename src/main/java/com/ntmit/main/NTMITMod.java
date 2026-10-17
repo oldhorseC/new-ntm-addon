@@ -39,12 +39,21 @@ public class NTMITMod {
 		proxy.registerRenderInfo();
 		net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new com.ntmit.lib.NTMITWorldRules());
 		net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new com.ntmit.lib.LidAchievements());
+		net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new com.ntmit.lib.RbmkDyatlovHandler());
 		NetworkRegistry.INSTANCE.registerGuiHandler(instance, new ModGuiHandler());
 		ModItems.preInit();
 		ModBlocks.preInit();
 		net.minecraftforge.fml.common.registry.EntityRegistry.registerModEntity(
 				new net.minecraft.util.ResourceLocation(RefStrings.MODID, "lid_plate"),
 				com.ntmit.entity.EntityLidPlate.class, "lid_plate", 0, instance, 160, 1, true);
+		net.minecraftforge.fml.common.registry.EntityRegistry.registerModEntity(
+				new net.minecraft.util.ResourceLocation(RefStrings.MODID, "rbmk_blue_light"),
+				com.ntmit.entity.EntityRBMKBlueLight.class, "rbmk_blue_light", 1, instance, 512, 20, false);
+		net.minecraftforge.fml.common.registry.EntityRegistry.registerModEntity(
+				new net.minecraft.util.ResourceLocation(RefStrings.MODID, "rbmk_blue_light_marker"),
+				com.ntmit.entity.EntityRBMKBlueLightMarker.class, "rbmk_blue_light_marker", 2, instance, 32, 1, false);
+		net.minecraftforge.fml.common.registry.EntityRegistry.registerEgg(
+				new net.minecraft.util.ResourceLocation(RefStrings.MODID, "rbmk_blue_light_marker"), 0x1E90FF, 0x87CEFA);
 		com.ntmit.controlpanel.NtmitControlPanel.register();
 		proxy.preInit(event);
 	}

@@ -102,3 +102,14 @@ advancements.ntm-it.digamma_zeroing.description=深渊在寻找着你，§kDyatl
 # boiler steam gauge warnings
 gui.ntm-it.boiler.caution=注意
 gui.ntm-it.boiler.warning=警告
+
+entity.rbmk_blue_light.name=RBMK 蓝色光柱
+entity.ntm-it.rbmk_blue_light.name=RBMK 蓝色光柱
+item.spawn_egg.entity.rbmk_blue_light.name=RBMK 蓝色光柱
+item.spawn_egg.entity.ntm-it.rbmk_blue_light.name=RBMK 蓝色光柱
+entity.rbmk_blue_light_marker.name=RBMK 蓝色光柱标记
+entity.ntm-it.rbmk_blue_light_marker.name=RBMK 蓝色光柱标记
+item.spawn_egg.entity.rbmk_blue_light_marker.name=RBMK 蓝色光柱标记
+item.spawn_egg.entity.ntm-it.rbmk_blue_light_marker.name=RBMK 蓝色光柱标记
+
+item.ntm-it.dyatlov_steam_device.name=达洛夫快速蒸汽爆炸装置

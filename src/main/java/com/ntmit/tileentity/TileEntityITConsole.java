@@ -187,9 +187,6 @@ public class TileEntityITConsole extends TileEntityLoadedBase implements IContro
 			BufferUtil.writeIntArray(buf, fluxBuffer);
 
 			for (RBMKScreen screen : this.screens) {
-				// BufferUtil.writeString -> utf8Bytes -> seq.length()：传 null 会抛 NullPointerException，
-				// 而 screen.display 的默认值就是 null，因此这里必须写成空串（与 HBM 官方 RBMKConsole 的
-				// display.isEmpty() ? null : display 约定保持一致）。
 				BufferUtil.writeString(buf, screen.display == null ? "" : screen.display);
 			}
 		} else {
@@ -230,14 +227,12 @@ public class TileEntityITConsole extends TileEntityLoadedBase implements IContro
 		return new Vec3d(pos.getX() - player.posX, pos.getY() - player.posY, pos.getZ() - player.posZ).length() < 20;
 	}
 
-	/** The same entry point without a player, for calls from inside this mod such as the trial block. */
 	public void receiveControl(NBTTagCompound data) {
 		this.receiveControl(null, data);
 	}
 
 	@Override
 	public void receiveControl(net.minecraft.entity.player.EntityPlayerMP player, NBTTagCompound data) {
-		if (data.getBoolean("ntmit_az5")) com.ntmit.lib.RbmkJumpHandler.az5Press(this.world, this.getPos());
 		if (data.hasKey("level")) {
 			Set<String> keys = data.getKeySet();
 			for (String key : keys) {

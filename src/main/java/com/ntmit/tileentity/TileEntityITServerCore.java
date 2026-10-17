@@ -185,11 +185,6 @@ public class TileEntityITServerCore extends TileEntityLoadedBase implements ITic
 			return this == ROD_LEVEL || this == FUEL_ENRICHMENT;
 		}
 
-		/**
-		 * 分数型模式的对外口径：统一乘 100 变成百分比，其余模式原样返回。
-		 * 仅用于 RTTY 广播与 .text 文本；CC/OC 查询仍按 "raw + .display" 双键给出，
-		 * 存储值与协议格式都不因此改变。
-		 */
 		public double displayValue(double raw) {
 			return this.isFraction() ? raw * 100.0D : raw;
 		}
@@ -509,12 +504,6 @@ public class TileEntityITServerCore extends TileEntityLoadedBase implements ITic
 		return this.rbmkToolSlot.getStackInSlot(0);
 	}
 
-	/**
-	 * RBMK 工具槽里若放着 HBM 的「多发起爆器」，返回它绑定过的柱体坐标。
-	 *
-	 * <p>绑定数据存在物品自身的 NBT（xValues / yValues / zValues），
-	 * 而该槽的 NBT 已随本 TE 同步到客户端，因此两端调用都可用。</p>
-	 */
 	public List<BlockPos> getBoundRbmkPositions() {
 		ItemStack stack = this.getRbmkToolStack();
 		if (stack.isEmpty() || !(stack.getItem() instanceof ItemMultiDetonator)) return Collections.emptyList();

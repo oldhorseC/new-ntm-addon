@@ -10,7 +10,11 @@ import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.ScaledResolution;
+import net.minecraft.client.renderer.BufferBuilder;
+import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.block.model.ModelResourceLocation;
+import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.item.Item;
 import net.minecraft.init.Items;
 import net.minecraft.nbt.NBTTagCompound;
@@ -23,8 +27,10 @@ import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.client.model.ModelLoader;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
+import org.lwjgl.opengl.GL11;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -36,6 +42,42 @@ public class ModEventHandlerClient {
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
         com.ntmit.render.RbmkDebugRender.render(event);
+    }
+
+    @SubscribeEvent
+    public void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase == TickEvent.Phase.END) {
+            com.ntmit.lib.SkyTint.tick();
+            com.ntmit.lib.NukeFlash.tick();
+        }
+    }
+
+    @SubscribeEvent
+    public void onFlashOverlay(RenderGameOverlayEvent.Pre event) {
+        if (event.getType() != RenderGameOverlayEvent.ElementType.CROSSHAIRS) return;
+        float alpha = com.ntmit.lib.NukeFlash.alpha();
+        if (alpha <= 0.0F) return;
+        int width = event.getResolution().getScaledWidth();
+        int height = event.getResolution().getScaledHeight();
+        Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder buffer = tessellator.getBuffer();
+        GlStateManager.pushMatrix();
+        GlStateManager.disableTexture2D();
+        GlStateManager.enableBlend();
+        GlStateManager.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
+        GlStateManager.disableDepth();
+        GlStateManager.depthMask(false);
+        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR);
+        buffer.pos(-1.0D, -1.0D, 0.0D).color(0.65F, 0.85F, 1.0F, alpha).endVertex();
+        buffer.pos(width + 1.0D, -1.0D, 0.0D).color(0.65F, 0.85F, 1.0F, alpha).endVertex();
+        buffer.pos(width + 1.0D, height + 1.0D, 0.0D).color(0.65F, 0.85F, 1.0F, alpha).endVertex();
+        buffer.pos(-1.0D, height + 1.0D, 0.0D).color(0.65F, 0.85F, 1.0F, alpha).endVertex();
+        tessellator.draw();
+        GlStateManager.depthMask(true);
+        GlStateManager.enableDepth();
+        GlStateManager.disableBlend();
+        GlStateManager.enableTexture2D();
+        GlStateManager.popMatrix();
     }
 
     @SubscribeEvent

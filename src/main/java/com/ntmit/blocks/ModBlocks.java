@@ -27,22 +27,6 @@ public class ModBlocks {
 
 	public static final BlockITSteamDrum steam_drum = new BlockITSteamDrum();
 
-	/**
-	 * 注意（2.6.1.0）：不要为 test_block / test_multiblock / server_* 调用
-	 * ForgeRegistries.BLOCKS.register()。
-	 * <p>
-	 * 这些方块继承 com.hbm.blocks.BlockBase（server_* 经由 BlockITServerColumn ->
-	 * BlockDummyable -> BlockBase），而 HBM 的 BlockBase / BlockDummyable / BlockContainerBakeableNormal /
-	 * BlockFallingBase 构造器都会执行 ModBlocks.ALL_BLOCKS.add(this)；
-	 * HBM 随后在 RegistryEvent.Register&lt;Block&gt; 事件里由 ModBlocks.registerBlocks()
-	 * 遍历 ALL_BLOCKS 统一注册。我们再注册一次就会触发 FML 的
-	 * "The object ... has been registered twice for the same name ..." 警告。
-	 * <p>
-	 * 例外：rbmk_gauge_3x3 的继承链是 RBMKGauge -> RBMKMiniPanelBase -> BlockContainer，
-	 * 不在 HBM 的 ALL_BLOCKS 中，必须由我们自己注册。
-	 * <p>
-	 * ItemBlock（ITEMS 注册表）与 TileEntity 的注册仍然由我们负责。
-	 */
 	public static void preInit() {
 		ForgeRegistries.ITEMS.register(new ItemBlock(test_block).setRegistryName(test_block.getRegistryName()));
 

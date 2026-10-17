@@ -45,7 +45,12 @@ public abstract class MixinTileEntityRBMKRod {
 			}
 			return;
 		}
-		if (!RbmkJumpHandler.rodAtMeltingPoint(rod) || !RbmkJumpHandler.steamNotYetAtBurst(rod)) {
+		boolean forced = RbmkJumpHandler.isForcedOverheat(world, rod.getPos());
+		if (!forced && (!RbmkJumpHandler.rodAtMeltingPoint(rod) || !RbmkJumpHandler.steamNotYetAtBurst(rod))) {
+			this.ntmitMeltTicks = 0;
+			return;
+		}
+		if (RbmkJumpHandler.hasWaterForOverheat(rod)) {
 			this.ntmitMeltTicks = 0;
 			return;
 		}
@@ -55,6 +60,7 @@ public abstract class MixinTileEntityRBMKRod {
 		if (this.ntmitMeltTicks >= RbmkJumpHandler.OVERHEAT_MELT_TICKS) {
 			this.ntmitMeltTicks = 0;
 			RbmkJumpHandler.moltenColumn(world, rod.getPos(), height);
+			RbmkJumpHandler.clearForcedOverheat(world, rod.getPos());
 		}
 	}
 

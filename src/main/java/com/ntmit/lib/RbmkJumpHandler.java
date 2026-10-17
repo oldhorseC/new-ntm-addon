@@ -1,6 +1,7 @@
 package com.ntmit.lib;
 
 import com.hbm.blocks.ModBlocks;
+import com.hbm.blocks.machine.rbmk.RBMKBase;
 import com.hbm.explosion.ExplosionLarge;
 import com.hbm.explosion.ExplosionNT;
 import com.hbm.handler.neutron.NeutronNodeWorld;
@@ -15,16 +16,20 @@ import com.hbm.particle.helper.HbmEffectNT;
 import com.hbm.tileentity.machine.rbmk.RBMKDials;
 import com.hbm.tileentity.machine.rbmk.TileEntityRBMKBase;
 import com.hbm.tileentity.machine.rbmk.TileEntityRBMKRod;
+import com.hbm.tileentity.machine.rbmk.TileEntityRBMKRodReaSim;
 import com.hbm.tileentity.machine.rbmk.TileEntityRBMKBoiler;
 import com.hbm.tileentity.machine.rbmk.TileEntityRBMKControl;
 import com.hbm.tileentity.machine.rbmk.TileEntityRBMKControlManual;
 import com.hbm.util.DelayedTick;
 import com.hbm.util.ParticleUtil;
 import com.ntmit.entity.EntityLidPlate;
+import com.ntmit.entity.EntityRBMKBlueLight;
 import com.ntmit.packet.PacketNTMITSteam;
+import com.ntmit.packet.PacketNTMITSkyTint;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.item.EntityFallingBlock;
 import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
@@ -48,7 +53,9 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 
 public class RbmkJumpHandler {
 
@@ -59,32 +66,17 @@ public class RbmkJumpHandler {
 	public static final int BOILER_DISPLAY_MAX_VALUE = 1900000;
 	public static final int BOILER_WARN_ORANGE = 1200000;
 	public static final int BOILER_WARN_RED = 1500000;
-	public static final int STEAM_JUMP_THRESHOLD = 1200000;
-	public static final int STEAM_VENT_THRESHOLD = 1600000;
 	public static final int VENT_INTERVAL = 10;
-	public static final int PRESSURE_BURST_THRESHOLD = 2000000;
-	public static final int HOTSTEAM_BURST_THRESHOLD = 1900000;
-	public static final int SUPERHOTSTEAM_BURST_THRESHOLD = 1700000;
-	public static final int ULTRAHOTSTEAM_BURST_THRESHOLD = 1400000;
+	public static final int PRESSURE_BURST_THRESHOLD = RbmkSteamCurve.STEAM_THRESHOLD;
+	public static final int HOTSTEAM_BURST_THRESHOLD = RbmkSteamCurve.HOTSTEAM_THRESHOLD;
+	public static final int SUPERHOTSTEAM_BURST_THRESHOLD = RbmkSteamCurve.SUPERHOTSTEAM_THRESHOLD;
+	public static final int ULTRAHOTSTEAM_BURST_THRESHOLD = RbmkSteamCurve.ULTRAHOTSTEAM_THRESHOLD;
 
 	public static int burstThreshold(com.hbm.inventory.fluid.FluidType type) {
-		if (type == null) return PRESSURE_BURST_THRESHOLD;
-		com.hbm.inventory.fluid.FluidType dry = com.ntmit.fluids.NTMITFluids.isMixture(type) ? com.ntmit.fluids.NTMITFluids.dryOf(type) : type;
-		if (dry == null) return PRESSURE_BURST_THRESHOLD;
-		if (dry == com.hbm.inventory.fluid.Fluids.ULTRAHOTSTEAM) return ULTRAHOTSTEAM_BURST_THRESHOLD;
-		if (dry == com.hbm.inventory.fluid.Fluids.SUPERHOTSTEAM) return SUPERHOTSTEAM_BURST_THRESHOLD;
-		if (dry == com.hbm.inventory.fluid.Fluids.HOTSTEAM) return HOTSTEAM_BURST_THRESHOLD;
-		return PRESSURE_BURST_THRESHOLD;
+		return RbmkSteamCurve.normalThreshold(type);
 	}
-	public static final int STEAM_JUMP_TARGET_MIN = 160;
-	public static final int STEAM_JUMP_TARGET_MAX = 1100;
-	public static final float STEAM_JUMP_CURVE = 4.0F;
-	public static final int STEAM_JUMP_MIN_DAMAGE = 1200;
-	public static final int STEAM_JUMP_FORCED_DAMAGE = 19200;
-	public static final int STEAM_JUMP_PERIOD_START = 40;
-	public static final int STEAM_JUMP_PERIOD_MIN = 2;
-	public static final int STEAM_JUMP_MAX_PER_TICK = 4;
-	public static final double JUMP_HEIGHT_LIMIT = 1.0D;
+	public static final int AMPLITUDE_SCALE = 1000;
+	public static final double JUMP_HEIGHT_LIMIT = RbmkSteamCurve.D_AMPLITUDE;
 
 	public static final boolean PLATE_ENABLED = true;
 	public static final double PLATE_LAUNCH_VY = 2.0D;
@@ -111,18 +103,10 @@ public class RbmkJumpHandler {
 	public static final double PLATE_MAX_FALL = 2.5D;
 	public static final float NEIGHBOUR_RATIO = 0.75F;
 	public static final int NEIGHBOUR_RADIUS = 1;
-	public static final int STEAM_JUMP_COOLDOWN_START = 20;
-	public static final int STEAM_JUMP_COOLDOWN_MIN = 2;
-
-	public static final int REASIM_STEAM_CAPACITY = 80000;
-	public static final int REASIM_JUMP_THRESHOLD = 48000;
-	public static final int REASIM_VENT_THRESHOLD = 64000;
-	public static final int REASIM_BURST_THRESHOLD = 79900;
-	public static final int REASIM_JUMP_TARGET_MIN = STEAM_JUMP_TARGET_MIN;
-	public static final int REASIM_JUMP_TARGET_MAX = STEAM_JUMP_TARGET_MAX;
-	public static final float REASIM_JUMP_CURVE = STEAM_JUMP_CURVE;
-	public static final int REASIM_JUMP_COOLDOWN_START = STEAM_JUMP_COOLDOWN_START;
-	public static final int REASIM_JUMP_COOLDOWN_MIN = STEAM_JUMP_COOLDOWN_MIN;
+	public static final int REASIM_STEAM_CAPACITY = RbmkSteamCurve.REASIM_CAPACITY;
+	public static final int REASIM_JUMP_THRESHOLD = RbmkSteamCurve.REASIM_A_START;
+	public static final int REASIM_VENT_THRESHOLD = RbmkSteamCurve.REASIM_C_START;
+	public static final int REASIM_BURST_THRESHOLD = REASIM_STEAM_CAPACITY;
 	public static final float REASIM_NEIGHBOUR_RATIO = NEIGHBOUR_RATIO;
 	public static final String SMOLDER_BLOCK = "leafia:pribris_smoke";
 	public static final String BURNING_BLOCK = "hbm:pribris_burning";
@@ -197,9 +181,10 @@ public class RbmkJumpHandler {
 	public static final int MAX_BURST_DEBRIS = 512;
 	public static final int MAX_COLUMN_FILL = 8192;
 	public static final int CACHE_CLEAN_RADIUS = 24;
-	public static final int MAX_DAMAGE = 1100;
+	public static final int MAX_DAMAGE = 1200;
 	public static boolean allowMeltdown = false;
 	public static final int OVERHEAT_MELT_TICKS = 100;
+	public static final int DYATLOV_STEAM_DELAY = 200;
 	public static final double OVERHEAT_NEUTRON_MULT = 2.5D;
 	public static final int OVERHEAT_FLAME_INTERVAL = 5;
 	public static final int OVERHEAT_FLAME_COUNT = 8;
@@ -224,15 +209,9 @@ public class RbmkJumpHandler {
 		return null;
 	}
 
-	private static final java.util.Set<String> FIELD_WARNED = java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
-
 	private static Field damageField(TileEntityRBMKBase te) {
 		if (te == null) return null;
-		Field field = lookupField(te.getClass(), DAMAGE_FIELD);
-		if (field == null && FIELD_WARNED.add("damage:" + te.getClass().getName())) {
-			diag("WARN leafia damage field \"" + DAMAGE_FIELD + "\" not found on " + te.getClass().getName());
-		}
-		return field;
+		return lookupField(te.getClass(), DAMAGE_FIELD);
 	}
 
 	public static boolean pump(TileEntityRBMKBase te, int target) {
@@ -262,6 +241,7 @@ public class RbmkJumpHandler {
 
 	public static boolean pumpForce(TileEntityRBMKBase te, int value) {
 		if (te == null || !isLeafiaLoaded()) return false;
+		if (isAirborne(te)) return false;
 		Field field = damageField(te);
 		if (field == null) return false;
 		try {
@@ -272,50 +252,80 @@ public class RbmkJumpHandler {
 		}
 	}
 
-	public static void diag(String message) {
-		System.out.println("[ntm-it][diag] " + message);
+	private static Field airborneHeightField;
+	private static Field airborneFallingField;
+	private static boolean airborneFieldsTried;
+
+	public static boolean isAirborne(TileEntityRBMKBase te) {
+		if (te == null || !isLeafiaLoaded()) return false;
+		if (!airborneFieldsTried) {
+			airborneFieldsTried = true;
+			try {
+				airborneHeightField = TileEntityRBMKBase.class.getField("leafia$jumpHeight");
+				airborneFallingField = TileEntityRBMKBase.class.getField("leafia$falling");
+			} catch (Throwable throwable) {
+				airborneHeightField = null;
+				airborneFallingField = null;
+			}
+		}
+		try {
+			if (airborneHeightField != null && airborneHeightField.getDouble(te) > 0.0D) return true;
+			if (airborneFallingField != null && airborneFallingField.getBoolean(te)) return true;
+		} catch (Throwable throwable) {
+		}
+		return false;
 	}
 
-	public static final int BURST_DELAY_TICKS = 600;
+	public static final int BURST_DELAY_TICKS = (int) (RbmkSteamCurve.EXPLOSION_DELAY_SECONDS * 20.0D);
 	public static final int BURST_REACTIVITY_DELAY_TICKS = 10;
-	public static final int STEAM_CURVE_START = 400000;
-	public static final int STEAM_CURVE_LINEAR_END = 800000;
-	public static final int STEAM_CURVE_KNEE = 1300000;
-	public static final int STEAM_CURVE_STEEP = 1600000;
-	public static final int BURST_AZ5_DELAY_TICKS = 40;
-	public static final double AZ5_RADIUS = 32.0D;
+	public static final int BURST_SURGE_DELAY_TICKS = 40;
+	public static final double SURGE_RADIUS = 32.0D;
+	public static final double SURGE_TRIGGER = 0.05D;
 
-	private static World az5World;
-	private static BlockPos az5Pos;
-	private static long az5Tick = Long.MIN_VALUE;
-	private static int az5Dim = Integer.MIN_VALUE;
+	private static World surgeWorld;
+	private static BlockPos surgePos;
+	private static long surgeTick = Long.MIN_VALUE;
+	private static int surgeDim = Integer.MIN_VALUE;
+	private static final java.util.Set<String> SURGE_ACTIVE = java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
 
-	public static void az5Press(World world, BlockPos pos) {
-		if (world == null || world.isRemote || pos == null) return;
-		az5World = world;
-		az5Pos = pos;
-		az5Dim = world.provider.getDimension();
-		az5Tick = world.getTotalWorldTime();
-		diag("AZ-5 pressed at " + pos);
+	public static void controlRodSurge(TileEntityRBMKControl rod, double mult) {
+		if (rod == null) return;
+		World world = rod.getWorld();
+		if (world == null || world.isRemote) return;
+		if (!(rod instanceof TileEntityRBMKControlManual manual)) return;
+		if (manual.targetLevel >= manual.startingLevel) return;
+		double surge = mult - rod.level;
+		String key = columnJumpKey(world, rod.getPos());
+		if (surge <= SURGE_TRIGGER * 0.5D) {
+			SURGE_ACTIVE.remove(key);
+			return;
+		}
+		if (surge <= SURGE_TRIGGER) return;
+		if (!SURGE_ACTIVE.add(key)) return;
+		surgeWorld = world;
+		surgePos = rod.getPos();
+		surgeDim = world.provider.getDimension();
+		surgeTick = world.getTotalWorldTime();
 	}
 
-	public static boolean az5ForcesBurst(World world, BlockPos pos) {
+	public static boolean surgeForcesBurst(World world, BlockPos pos) {
 		if (world == null || pos == null) return false;
-		if (az5World != world || az5Pos == null) return false;
-		if (az5Dim != world.provider.getDimension()) return false;
-		long elapsed = world.getTotalWorldTime() - az5Tick;
-		if (elapsed < BURST_AZ5_DELAY_TICKS) return false;
+		if (surgeWorld != world || surgePos == null) return false;
+		if (surgeDim != world.provider.getDimension()) return false;
+		long elapsed = world.getTotalWorldTime() - surgeTick;
+		if (elapsed < BURST_SURGE_DELAY_TICKS) return false;
 		if (elapsed > BURST_DELAY_TICKS) {
-			az5Consume();
+			surgeConsume();
 			return false;
 		}
-		return pos.distanceSq(az5Pos) <= AZ5_RADIUS * AZ5_RADIUS;
+		return pos.distanceSq(surgePos) <= SURGE_RADIUS * SURGE_RADIUS;
 	}
 
-	public static void az5Consume() {
-		az5World = null;
-		az5Pos = null;
-		az5Tick = Long.MIN_VALUE;
+	public static void surgeConsume() {
+		surgeWorld = null;
+		surgePos = null;
+		surgeTick = Long.MIN_VALUE;
+		surgeDim = Integer.MIN_VALUE;
 	}
 
 	public static void steamBurst(TileEntityRBMKBoiler boiler) {
@@ -330,7 +340,6 @@ public class RbmkJumpHandler {
 			}
 			pressureBurst(boiler);
 		} catch (Throwable throwable) {
-			diag("pressure burst error: " + throwable);
 			throwable.printStackTrace();
 		}
 	}
@@ -352,7 +361,17 @@ public class RbmkJumpHandler {
 		DIGAMMA_SCAN_CACHE.clear();
 		DIGAMMA_MARKS.clear();
 		JUMP_COLUMNS.clear();
-		JUMP_NEXT.clear();
+		REACTOR_TICK.clear();
+		REACTOR_ZONE.clear();
+		REACTOR_KEY_CACHE.clear();
+		COLUMN_PHASE.clear();
+		COLUMN_NEXT.clear();
+		REACTOR_BURST_START.clear();
+		REACTOR_BURST_TICK.clear();
+		REACTOR_EVENT_NEXT.clear();
+		NATIVE_UNTIL.clear();
+		FORCED_OVERHEAT.clear();
+		FIRST_BURST_DAY.clear();
 		lastBurstWorld = null;
 		lastBurstTick = Long.MIN_VALUE;
 		reasimBurstWorld = null;
@@ -364,17 +383,16 @@ public class RbmkJumpHandler {
 		impactTick = Long.MIN_VALUE;
 		impactDim = Integer.MIN_VALUE;
 		impactUsed = 0;
-		az5World = null;
-		az5Pos = null;
-		az5Tick = Long.MIN_VALUE;
-		az5Dim = Integer.MIN_VALUE;
+		surgeConsume();
+		SURGE_ACTIVE.clear();
 		redBurstWorld = null;
 		redBurstPos = null;
 		redBurstTick = Long.MIN_VALUE;
-		diag("caches cleared (world unload)");
 	}
 
 	public static final int DIGAMMA_ZEROING_COOLDOWN_TICKS = 1200;
+	private static final Map<World, Set<BlockPos>> FORCED_OVERHEAT = Collections.synchronizedMap(new WeakHashMap<World, Set<BlockPos>>());
+	private static final Map<String, Boolean> FIRST_BURST_DAY = new java.util.concurrent.ConcurrentHashMap<String, Boolean>();
 	private static final java.util.Map<String, Long> ZEROED_REACTORS = new java.util.concurrent.ConcurrentHashMap<String, Long>();
 	private static final java.util.Map<String, Long> DIGAMMA_BURST_TICKS = new java.util.concurrent.ConcurrentHashMap<String, Long>();
 	private static World redBurstWorld;
@@ -443,14 +461,12 @@ public class RbmkJumpHandler {
 		boolean recent = false;
 		Long lastBurst = DIGAMMA_BURST_TICKS.get(key);
 		if (lastBurst != null) recent = world.getTotalWorldTime() - lastBurst.longValue() < (long) BURST_COOLDOWN;
-		diag("digamma reactor burst center=" + center + " key=" + key + " origin=" + (origin == null ? "none" : origin.getPos()) + " zeroing deferred to second explosion");
 		if (origin != null && !recent) {
 			DIGAMMA_BURST_TICKS.put(key, world.getTotalWorldTime());
 			try {
 				forceRedBurst(world, origin.getPos());
 				pressureBurst(origin, true);
 			} catch (Throwable throwable) {
-				diag("digamma burst error: " + throwable);
 				throwable.printStackTrace();
 			}
 		}
@@ -462,15 +478,11 @@ public class RbmkJumpHandler {
 		long now = world.getTotalWorldTime();
 		Long next = ZEROED_REACTORS.get(key);
 		if (next != null && next.longValue() > now) {
-			diag("digamma zeroing on cooldown for reactor " + key + " left=" + (next.longValue() - now));
 			return;
 		}
 		ZEROED_REACTORS.put(key, Long.valueOf(now + (long) DIGAMMA_ZEROING_COOLDOWN_TICKS));
-		diag("digamma zeroing payload fires at " + center);
 		digammaZeroing(world, center);
 	}
-
-	private static final Set<String> ROD_NAMES_SEEN = Collections.synchronizedSet(new HashSet<String>());
 
 	public static boolean isDigammaRod(TileEntityRBMKRod rod) {
 		if (rod == null || rod.inventory == null) return false;
@@ -480,7 +492,6 @@ public class RbmkJumpHandler {
 		if (item == com.hbm.items.ModItems.rbmk_fuel_drx) return true;
 		net.minecraft.util.ResourceLocation name = item.getRegistryName();
 		if (name == null) return false;
-		if (ROD_NAMES_SEEN.add(name.toString())) diag("rod fuel item seen: " + name);
 		String path = name.getPath();
 		return path.contains("digamma") || path.contains("dgomega") || path.contains("drx");
 	}
@@ -570,16 +581,13 @@ public class RbmkJumpHandler {
 			Method method = torex.getMethod("statFacDigamma", World.class, double.class, double.class, double.class, float.class);
 			method.invoke(null, world, x, y, z, DIGAMMA_TOREX_SCALE);
 		} catch (Throwable throwable) {
-			diag("digamma torex unavailable: " + throwable);
 		}
 		try {
 			com.hbm.entity.logic.EntityNukeExplosionMK5 blast = com.hbm.entity.logic.EntityNukeExplosionMK5.statFac(world, DIGAMMA_NUKE_RADIUS, x, y, z);
 			digammaFallout(blast);
 			world.spawnEntity(blast);
 		} catch (Throwable throwable) {
-			diag("digamma nuke error: " + throwable);
 		}
-		diag("digamma zeroing at " + pos);
 	}
 
 	public static void digammaDose(World world, double x, double y, double z) {
@@ -601,7 +609,6 @@ public class RbmkJumpHandler {
 				}
 			}
 		} catch (Throwable throwable) {
-			diag("digamma dose error: " + throwable);
 		}
 	}
 
@@ -611,7 +618,6 @@ public class RbmkJumpHandler {
 			Class<?> fallout = Class.forName(CURSED_FALLOUT_INTERFACE);
 			if (fallout.isInstance(blast)) fallout.getMethod("setDigammaFallout").invoke(blast);
 		} catch (Throwable throwable) {
-			diag("digamma fallout unavailable: " + throwable);
 		}
 	}
 
@@ -625,29 +631,126 @@ public class RbmkJumpHandler {
 		}
 	}
 
-	public static final int JUMP_FAST_TICKS = 200;
-	public static final int JUMP_RAMP_TICKS = BURST_DELAY_TICKS - JUMP_FAST_TICKS;
-	public static final int JUMP_PERIOD_SLOW = 60;
-	public static final int JUMP_PERIOD_RAMP_END = 8;
-	public static final int JUMP_PERIOD_FAST = 3;
-	public static final int JUMP_DAMAGE_MIN = 600;
-	public static final int JUMP_DAMAGE_MAX = 1000;
 	public static final int JUMP_ORDER_REFRESH = 40;
-	public static final float JUMP_THRESHOLD_RATIO = 1.0F;
-	private static final java.util.Map<Long, Long> JUMP_NEXT = new java.util.concurrent.ConcurrentHashMap<Long, Long>();
 	private static final java.util.Map<String, Object[]> JUMP_COLUMNS = new java.util.concurrent.ConcurrentHashMap<String, Object[]>();
+	private static final java.util.Map<String, Long> REACTOR_TICK = new java.util.concurrent.ConcurrentHashMap<String, Long>();
+	private static final java.util.Map<String, Object[]> REACTOR_ZONE = new java.util.concurrent.ConcurrentHashMap<String, Object[]>();
+	private static final java.util.Map<String, Object[]> REACTOR_KEY_CACHE = new java.util.concurrent.ConcurrentHashMap<String, Object[]>();
+	private static final java.util.Map<String, Long> REACTOR_BURST_START = new java.util.concurrent.ConcurrentHashMap<String, Long>();
+	private static final java.util.Map<String, Long> REACTOR_BURST_TICK = new java.util.concurrent.ConcurrentHashMap<String, Long>();
+	private static final java.util.Map<String, Long> REACTOR_EVENT_NEXT = new java.util.concurrent.ConcurrentHashMap<String, Long>();
+	private static final java.util.Map<String, Long> NATIVE_UNTIL = new java.util.concurrent.ConcurrentHashMap<String, Long>();
+	private static final java.util.Set<String> COLUMN_PHASE = java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
+	private static final java.util.Map<String, Long> COLUMN_NEXT = new java.util.concurrent.ConcurrentHashMap<String, Long>();
+	private static final int REACTOR_ZONE_REFRESH = 5;
 
-	private static int jumpPeriod(int elapsed) {
-		if (elapsed >= JUMP_RAMP_TICKS) return JUMP_PERIOD_FAST;
-		float progress = (float) elapsed / (float) JUMP_RAMP_TICKS;
-		return Math.round(lerp((float) JUMP_PERIOD_SLOW, (float) JUMP_PERIOD_RAMP_END, progress * progress));
+	private static String columnJumpKey(World world, BlockPos pos) {
+		return worldIdentity(world) + ":" + pos.toLong();
 	}
 
-	private static int jumpBatch(int total, int elapsed) {
-		if (total <= 1) return 1;
-		float progress = Math.min(1.0F, (float) elapsed / (float) JUMP_RAMP_TICKS);
-		int batch = (int) Math.ceil((double) total * (0.35D + 0.65D * (double) progress * (double) progress));
-		return MathHelper.clamp(batch, 1, total);
+	private static String reactorKeyFor(World world, BlockPos origin, List<BlockPos> columns) {
+		String originKey = worldIdentity(world) + ":" + origin.toLong();
+		long now = world.getTotalWorldTime();
+		Object[] cached = REACTOR_KEY_CACHE.get(originKey);
+		if (cached != null && now - ((Long) cached[0]).longValue() < (long) JUMP_ORDER_REFRESH) {
+			return (String) cached[1];
+		}
+		String key = reactorJumpKey(world, columns);
+		REACTOR_KEY_CACHE.put(originKey, new Object[] { Long.valueOf(now), key });
+		return key;
+	}
+
+
+
+	private static double columnFraction(World world, TileEntity te) {
+		if (te instanceof TileEntityRBMKBoiler boiler) return RbmkSteamCurve.normalFraction(boiler.steam.getFill(), boiler.steam.getTankType());
+		if (te instanceof TileEntityRBMKRodReaSim && te instanceof TileEntityRBMKBase base) return RbmkSteamCurve.reasimFraction(base.reasimSteam);
+		return 0.0D;
+	}
+
+	public static RbmkSteamCurve.Zone reactorZone(World world, BlockPos origin) {
+		if (world == null || world.isRemote || origin == null) return RbmkSteamCurve.Zone.NONE;
+		List<BlockPos> columns = collectReactorColumns(world, origin);
+		if (columns.isEmpty()) return RbmkSteamCurve.Zone.NONE;
+		String key = reactorKeyFor(world, origin, columns);
+		long now = world.getTotalWorldTime();
+		Object[] cached = REACTOR_ZONE.get(key);
+		if (cached != null && now - ((Long) cached[0]).longValue() < (long) REACTOR_ZONE_REFRESH) {
+			return (RbmkSteamCurve.Zone) cached[1];
+		}
+		RbmkSteamCurve.Zone highest = RbmkSteamCurve.Zone.NONE;
+		for (BlockPos pos : columns) {
+			TileEntity te = world.getTileEntity(pos);
+			double fraction = columnFraction(world, te);
+			RbmkSteamCurve.Zone zone = RbmkSteamCurve.zone(fraction);
+			if (zone.ordinal() > highest.ordinal()) highest = zone;
+			if (highest == RbmkSteamCurve.Zone.D) break;
+		}
+		REACTOR_ZONE.put(key, new Object[] { Long.valueOf(now), highest });
+		return highest;
+	}
+
+	public static int reactorBurstElapsed(World world, BlockPos origin) {
+		if (world == null || world.isRemote || origin == null) return 0;
+		List<BlockPos> columns = collectReactorColumns(world, origin);
+		if (columns.isEmpty()) return 0;
+		String key = reactorKeyFor(world, origin, columns);
+		Long start = REACTOR_BURST_START.get(key);
+		if (start == null) return 0;
+		long elapsed = world.getTotalWorldTime() - start.longValue();
+		if (elapsed <= 0L) return 0;
+		return (int) Math.min(elapsed, (long) Integer.MAX_VALUE);
+	}
+
+	public static void tickReactorBurst(World world, BlockPos origin) {
+		if (world == null || world.isRemote || origin == null) return;
+		List<BlockPos> columns = collectReactorColumns(world, origin);
+		if (columns.isEmpty()) return;
+		String key = reactorKeyFor(world, origin, columns);
+		long now = world.getTotalWorldTime();
+		Long tick = REACTOR_BURST_TICK.get(key);
+		if (tick != null && tick.longValue() == now) return;
+		REACTOR_BURST_TICK.put(key, Long.valueOf(now));
+		if (reactorZone(world, origin) != RbmkSteamCurve.Zone.D) {
+			REACTOR_BURST_START.remove(key);
+			return;
+		}
+		Long start = REACTOR_BURST_START.get(key);
+		if (start == null) {
+			REACTOR_BURST_START.put(key, Long.valueOf(now));
+			for (BlockPos pos : columns) {
+				TileEntity te = world.getTileEntity(pos);
+				if (columnFraction(world, te) < 1.0D) continue;
+				if (te instanceof TileEntityRBMKBoiler boiler) {
+				} else if (te instanceof TileEntityRBMKBase base) {
+				}
+				break;
+			}
+			return;
+		}
+		if (now - start.longValue() < (long) BURST_DELAY_TICKS) return;
+		REACTOR_BURST_START.remove(key);
+		TileEntityRBMKBase anchor = null;
+		for (BlockPos pos : columns) {
+			TileEntity te = world.getTileEntity(pos);
+			if (columnFraction(world, te) >= 1.0D && te instanceof TileEntityRBMKBase base) {
+				anchor = base;
+				break;
+			}
+		}
+		if (anchor != null) burstReactor(world, anchor);
+	}
+
+	private static void burstReactor(World world, TileEntityRBMKBase anchor) {
+		if (world == null || world.isRemote || anchor == null) return;
+		if (NTMITWorldRules.steamExplosionDisabled(world)) return;
+		if (reactorHasDigammaRod(world, anchor.getPos())) {
+			digammaReactorBurst(world, anchor.getPos());
+			return;
+		}
+		if (anchor instanceof TileEntityRBMKBoiler boiler) boiler.steam.setFill(0);
+		anchor.reasimSteam = 0;
+		pressureBurst(anchor);
 	}
 
 	@SuppressWarnings("unchecked")
@@ -677,77 +780,109 @@ public class RbmkJumpHandler {
 		return columns;
 	}
 
-	public static int jumpTargetDamage(World world) {
-		int span = Math.max(1, JUMP_DAMAGE_MAX - JUMP_DAMAGE_MIN + 1);
-		return JUMP_DAMAGE_MIN + world.rand.nextInt(span);
+	public static int amplitudeDamage(double amplitude) {
+		return RbmkSteamCurve.amplitudeToDamage(amplitude);
 	}
 
 	public static final int DARK_RED_SMOKE_COLOR = 0x8B0000;
 
-	public static void jumpWholeReactor(World world, BlockPos origin) {
+	public static void tickCJumps(World world, BlockPos origin) {
 		if (world == null || world.isRemote || origin == null) return;
+		if (reactorZone(world, origin) != RbmkSteamCurve.Zone.C) return;
 		List<BlockPos> columns = collectReactorColumns(world, origin);
 		if (columns.isEmpty()) return;
+		String reactor = reactorKeyFor(world, origin, columns);
+		long now = world.getTotalWorldTime();
+		Long tick = REACTOR_TICK.get(reactor);
+		if (tick != null && tick.longValue() == now) return;
+		REACTOR_TICK.put(reactor, Long.valueOf(now));
+		double maxFraction = 0.0D;
+		for (BlockPos pos : columns) maxFraction = Math.max(maxFraction, columnFraction(world, world.getTileEntity(pos)));
+		int period = RbmkSteamCurve.cPeriod(maxFraction);
+		int budget = RbmkSteamCurve.cBudget(maxFraction, columns.size());
+		Long event = REACTOR_EVENT_NEXT.get(reactor);
+		if (event != null && now < event.longValue()) return;
+		REACTOR_EVENT_NEXT.put(reactor, Long.valueOf(now + period));
+		processReactorColumns(world, columns, RbmkSteamCurve.C_AMPLITUDE, period, false, budget);
+	}
+
+	public static void processReactorColumns(World world, List<BlockPos> columns, double amplitude, int period, boolean all, int budget) {
+		if (world == null || world.isRemote || columns == null || columns.isEmpty()) return;
+		int damage = amplitudeDamage(amplitude);
+		if (damage <= 0) return;
 		long now = world.getTotalWorldTime();
 		List<BlockPos> order = new ArrayList<BlockPos>(columns);
 		Collections.shuffle(order, world.rand);
-		int limit = Math.max(1, Math.round((float) order.size() * JUMP_THRESHOLD_RATIO));
 		int pumped = 0;
 		for (BlockPos pos : order) {
-			if (pumped >= limit) break;
-			long key = pos.toLong();
-			Long next = JUMP_NEXT.get(key);
-			if (next != null && next.longValue() > now) continue;
-			JUMP_NEXT.put(Long.valueOf(key), Long.valueOf(now + (long) JUMP_PERIOD_RAMP_END));
+			if (pumped >= budget) break;
 			TileEntity te = world.getTileEntity(pos);
 			if (!(te instanceof TileEntityRBMKBase base)) continue;
-			if (pumpForce(base, jumpTargetDamage(world))) pumped++;
+			String key = columnJumpKey(world, pos);
+			Long columnNext = COLUMN_NEXT.get(key);
+			if (columnNext == null) {
+				COLUMN_NEXT.put(key, Long.valueOf(now + 1L + (long) world.rand.nextInt(Math.max(1, period * 8))));
+				continue;
+			}
+			if (columnNext.longValue() > now) continue;
+			int value = damage;
+			if (!all) value = Math.max(1, Math.round(damage * (0.75F + 0.25F * world.rand.nextFloat())));
+			if (pumpForce(base, value)) {
+				COLUMN_NEXT.put(key, Long.valueOf(now + (long) Math.max(1, period) + (long) world.rand.nextInt(Math.max(1, period))));
+				pumped++;
+			} else {
+				COLUMN_NEXT.put(key, Long.valueOf(now + 1L));
+			}
 		}
-		if (pumped > 0) diag("reactor random jump pumped=" + pumped + "/" + order.size());
+	}
+
+	private static String reactorJumpKey(World world, List<BlockPos> columns) {
+		int minX = Integer.MAX_VALUE;
+		int minY = Integer.MAX_VALUE;
+		int minZ = Integer.MAX_VALUE;
+		for (BlockPos pos : columns) {
+			minX = Math.min(minX, pos.getX());
+			minY = Math.min(minY, pos.getY());
+			minZ = Math.min(minZ, pos.getZ());
+		}
+		return worldIdentity(world) + ":" + minX + ":" + minY + ":" + minZ;
 	}
 
 	public static void pumpReactor(World world, BlockPos origin, int elapsed) {
-		if (world == null || world.isRemote || origin == null || elapsed < 0) return;
+		if (world == null || world.isRemote || origin == null || elapsed <= 0) return;
 		List<BlockPos> columns = collectReactorColumns(world, origin);
 		if (columns.isEmpty()) return;
+		String reactor = reactorKeyFor(world, origin, columns);
 		long now = world.getTotalWorldTime();
-		boolean special = reactorHasDigammaRod(world, origin);
-		int period = jumpPeriod(elapsed);
-		int batch = jumpBatch(columns.size(), elapsed);
-		if (special) {
-			period = Math.max(2, period * 3 / 4);
-			batch = MathHelper.clamp(batch * 3 / 2, 1, columns.size());
-		}
-		List<BlockPos> order = new ArrayList<BlockPos>(columns);
-		Collections.shuffle(order, world.rand);
-		int pumped = 0;
-		for (BlockPos pos : order) {
-			if (pumped >= batch) break;
-			long key = pos.toLong();
-			Long next = JUMP_NEXT.get(key);
-			if (next != null && next.longValue() > now) continue;
-			JUMP_NEXT.put(Long.valueOf(key), Long.valueOf(now + (long) period));
+		Long tick = REACTOR_TICK.get(reactor);
+		if (tick != null && tick.longValue() == now) return;
+		REACTOR_TICK.put(reactor, Long.valueOf(now));
+		double progress = Math.min(1.0D, (double) elapsed / (double) BURST_DELAY_TICKS);
+		int damage = (int) Math.min(MAX_DAMAGE, 100.0D + 1100.0D * progress);
+		for (BlockPos pos : columns) {
 			TileEntity te = world.getTileEntity(pos);
 			if (!(te instanceof TileEntityRBMKBase base)) continue;
-			int span = Math.max(1, JUMP_DAMAGE_MAX - JUMP_DAMAGE_MIN + 1);
-			if (pumpForce(base, JUMP_DAMAGE_MIN + world.rand.nextInt(span))) pumped++;
+			NATIVE_UNTIL.put(columnJumpKey(world, pos), Long.valueOf(now + 2L));
+			setDamageRaw(base, damage);
 		}
-		if (pumped > 0) diag("reactor jump elapsed=" + elapsed + " period=" + period + " batch=" + batch + " pumped=" + pumped + " total=" + columns.size());
 	}
 
-	public static float steamCurve(double value, double capacity) {
-		if (capacity <= 0.0D) return 0.0F;
-		double u = value / capacity;
-		double s = (double) STEAM_CURVE_START / (double) BOILER_STEAM_CAPACITY;
-		double l = (double) STEAM_CURVE_LINEAR_END / (double) BOILER_STEAM_CAPACITY;
-		double k = (double) STEAM_CURVE_KNEE / (double) BOILER_STEAM_CAPACITY;
-		double t = (double) STEAM_CURVE_STEEP / (double) BOILER_STEAM_CAPACITY;
-		if (u <= s) return 0.0F;
-		if (u <= l) return (float) (0.2D * (u - s) / (l - s));
-		if (u <= k) return (float) (0.2D + 0.3D * Math.pow((u - l) / (k - l), 1.5D));
-		if (u <= t) return (float) (0.5D + 0.25D * Math.pow((u - k) / (t - k), 2.5D));
-		double tail = Math.min((u - t) / (1.0D - t), 1.0D);
-		return (float) Math.min(1.0D, 0.75D + 0.25D * Math.pow(tail, 4.0D));
+	public static boolean isNativeJump(World world, BlockPos pos) {
+		if (world == null || world.isRemote || pos == null) return false;
+		Long until = NATIVE_UNTIL.get(columnJumpKey(world, pos));
+		return until != null && world.getTotalWorldTime() <= until.longValue();
+	}
+
+	private static boolean setDamageRaw(TileEntityRBMKBase te, int value) {
+		if (te == null || !isLeafiaLoaded()) return false;
+		Field field = damageField(te);
+		if (field == null) return false;
+		try {
+			field.setInt(te, Math.max(0, Math.min(value, MAX_DAMAGE)));
+			return true;
+		} catch (Throwable throwable) {
+			return false;
+		}
 	}
 
 	private static World scramWorld;
@@ -800,13 +935,33 @@ public class RbmkJumpHandler {
 		World world = boiler.getWorld();
 		if (world == null || world.isRemote) return 0;
 		if (steam == null || steam.getMaxFill() <= 0) return 0;
-		if (steam.getFill() < STEAM_JUMP_THRESHOLD) return 0;
-		float ramp = steamCurve(steam.getFill(), BOILER_STEAM_CAPACITY);
-		int target = Math.round(MathHelper.clamp(lerp(STEAM_JUMP_TARGET_MIN, STEAM_JUMP_TARGET_MAX, ramp), 0.0F, MAX_DAMAGE));
-		if (steam.getFill() >= STEAM_VENT_THRESHOLD && world.getTotalWorldTime() % VENT_INTERVAL == 0L) emitJet(boiler);
-		pump(boiler, target);
-		jumpWholeReactor(world, boiler.getPos());
-		return Math.round(lerp(STEAM_JUMP_COOLDOWN_START, STEAM_JUMP_COOLDOWN_MIN, ramp));
+		double s = RbmkSteamCurve.normalFraction(steam.getFill(), steam.getTankType());
+		RbmkSteamCurve.Zone zone = RbmkSteamCurve.zone(s);
+		if (zone == RbmkSteamCurve.Zone.NONE || zone == RbmkSteamCurve.Zone.Z) return 0;
+		RbmkSteamCurve.Zone reactor = reactorZone(world, boiler.getPos());
+		if (reactor == RbmkSteamCurve.Zone.D && zone != RbmkSteamCurve.Zone.D) return 0;
+		if (reactor == RbmkSteamCurve.Zone.C && zone != RbmkSteamCurve.Zone.C && zone != RbmkSteamCurve.Zone.D) return 0;
+		if (zone == RbmkSteamCurve.Zone.C && world.getTotalWorldTime() % VENT_INTERVAL == 0L) emitJet(boiler);
+
+		int damage = amplitudeDamage(RbmkSteamCurve.amplitude(zone, s, 0.0D));
+		switch (zone) {
+			case A:
+				if (COLUMN_PHASE.add(columnJumpKey(world, boiler.getPos()))) return RbmkSteamCurve.A_PERIOD * 2 + world.rand.nextInt(Math.max(1, RbmkSteamCurve.A_PERIOD * 2));
+				pumpForce(boiler, damage);
+				return RbmkSteamCurve.A_PERIOD + world.rand.nextInt(Math.max(1, RbmkSteamCurve.A_PERIOD / 2));
+			case B:
+				int bPeriod = RbmkSteamCurve.bPeriod(s);
+				if (COLUMN_PHASE.add(columnJumpKey(world, boiler.getPos()))) return bPeriod * 2 + world.rand.nextInt(Math.max(1, bPeriod * 2));
+				pumpForce(boiler, damage);
+				pumpNeighbours(world, boiler.getPos(), damage);
+				return bPeriod + world.rand.nextInt(Math.max(1, bPeriod / 2));
+			case C:
+				return RbmkSteamCurve.C_PERIOD;
+			case D:
+				return RbmkSteamCurve.D_PERIOD;
+			default:
+				return 0;
+		}
 	}
 
 	private static World reasimBurstWorld;
@@ -822,14 +977,33 @@ public class RbmkJumpHandler {
 		if (te == null || !isLeafiaLoaded()) return 0;
 		World world = te.getWorld();
 		if (world == null || world.isRemote) return 0;
-		int steam = te.reasimSteam;
-		if (steam < REASIM_JUMP_THRESHOLD) return 0;
-		float ramp = steamCurve(steam, REASIM_STEAM_CAPACITY);
-		int target = Math.round(MathHelper.clamp(lerp(REASIM_JUMP_TARGET_MIN, REASIM_JUMP_TARGET_MAX, ramp), 0.0F, MAX_DAMAGE));
-		if (steam >= REASIM_VENT_THRESHOLD && world.getTotalWorldTime() % VENT_INTERVAL == 0L) emitJet(te);
-		pump(te, target);
-		jumpWholeReactor(world, te.getPos());
-		return Math.round(lerp(REASIM_JUMP_COOLDOWN_START, REASIM_JUMP_COOLDOWN_MIN, ramp));
+		double s = RbmkSteamCurve.reasimFraction(te.reasimSteam);
+		RbmkSteamCurve.Zone zone = RbmkSteamCurve.zone(s);
+		if (zone == RbmkSteamCurve.Zone.NONE || zone == RbmkSteamCurve.Zone.Z) return 0;
+		RbmkSteamCurve.Zone reactor = reactorZone(world, te.getPos());
+		if (reactor == RbmkSteamCurve.Zone.D && zone != RbmkSteamCurve.Zone.D) return 0;
+		if (reactor == RbmkSteamCurve.Zone.C && zone != RbmkSteamCurve.Zone.C && zone != RbmkSteamCurve.Zone.D) return 0;
+		if (zone == RbmkSteamCurve.Zone.C && world.getTotalWorldTime() % VENT_INTERVAL == 0L) emitJet(te);
+
+		int damage = amplitudeDamage(RbmkSteamCurve.amplitude(zone, s, 0.0D));
+		switch (zone) {
+			case A:
+				if (COLUMN_PHASE.add(columnJumpKey(world, te.getPos()))) return RbmkSteamCurve.A_PERIOD * 2 + world.rand.nextInt(Math.max(1, RbmkSteamCurve.A_PERIOD * 2));
+				pumpForce(te, damage);
+				return RbmkSteamCurve.A_PERIOD + world.rand.nextInt(Math.max(1, RbmkSteamCurve.A_PERIOD / 2));
+			case B:
+				int bPeriod = RbmkSteamCurve.bPeriod(s);
+				if (COLUMN_PHASE.add(columnJumpKey(world, te.getPos()))) return bPeriod * 2 + world.rand.nextInt(Math.max(1, bPeriod * 2));
+				pumpForce(te, damage);
+				pumpNeighbours(world, te.getPos(), damage);
+				return bPeriod + world.rand.nextInt(Math.max(1, bPeriod / 2));
+			case C:
+				return RbmkSteamCurve.C_PERIOD;
+			case D:
+				return RbmkSteamCurve.D_PERIOD;
+			default:
+				return 0;
+		}
 	}
 
 	public static void reasimBurst(TileEntityRBMKBase te, World world) {
@@ -846,7 +1020,6 @@ public class RbmkJumpHandler {
 			}
 			pressureBurst(te);
 		} catch (Throwable throwable) {
-			diag("reasim burst error: " + throwable);
 			throwable.printStackTrace();
 		}
 	}
@@ -889,11 +1062,8 @@ public class RbmkJumpHandler {
 		double z = (double) pos.getZ() + 0.25D + (double) world.rand.nextInt(2) * 0.5D;
 		boolean digamma = reactorHasDigammaRod(world, pos);
 		if (!digamma) spawnSteam(world, x, top, z);
-		if (jetDiag++ % 20 == 0) diag("vent jet particle=" + (digamma ? "SUPPRESSED(digamma)" : "WHITE") + " at " + pos);
 		world.playSound(null, x, top, z, HBMSoundHandler.steamEngineOperate, SoundCategory.BLOCKS, 2.0F, 1.0F + world.rand.nextFloat() * 0.25F);
 	}
-
-	private static int jetDiag;
 
 	public static final int LID_RED_STEAM_PER_TICK = 8;
 	public static final int VENT_RED_STEAM_COUNT = 4;
@@ -922,7 +1092,6 @@ public class RbmkJumpHandler {
 			final float fs = spread;
 			DelayedTick.scheduleWorldStart(world, wave * STEAM_WAVE_INTERVAL, delayed -> sendRedSteam(delayed, fx, wy, fz, fs, DIGAMMA_CLOUD_COUNT));
 		}
-		diag("digamma steam burst at " + cx + "," + y + "," + cz + " spread=" + spread);
 	}
 
 	public static void sendSteam(World world, double x, double y, double z, float spread, int count, float base, float max, int life, int color, float rise) {
@@ -937,13 +1106,11 @@ public class RbmkJumpHandler {
 		for (int x = bounds[0]; x <= bounds[1]; x += 3) {
 			for (int z = bounds[2]; z <= bounds[3]; z += 3) {
 				if (count++ >= 96) {
-					diag("footprint explosion points=" + count + " radius=" + radius + " (capped)");
 					return;
 				}
 				new ExplosionNT(world, null, (double) x + 0.5D, (double) y + 0.5D, (double) z + 0.5D, radius).addAttrib(ExplosionNT.ExAttrib.ALLDROP).addAttrib(ExplosionNT.ExAttrib.NOSOUND).addAttrib(ExplosionNT.ExAttrib.NOPARTICLE).explode();
 			}
 		}
-		diag("footprint explosion points=" + count + " radius=" + radius);
 	}
 
 	public static void sendRedSteam(World world, double x, double y, double z, float spread, int count) {
@@ -978,19 +1145,16 @@ public class RbmkJumpHandler {
 		plate.configure(positions, render, center, tints, lifts, rodColors);
 		plate.setCoreBounds(bounds[0], bounds[1], bounds[2], bounds[3]);
 		boolean special = sideways || reactorHasDigammaRod(world, center, true);
-		if (special) diag("lid special launch for digamma reactor");
 		plate.setRedSteam(special);
 		int lidSteamColor = special ? RED_STEAM_COLOR : RISE_STEAM_COLOR;
 		plate.motionY = PLATE_LAUNCH_VY;
-		plate.motionX = (world.rand.nextDouble() - 0.5D) * PLATE_LAUNCH_SPREAD;
-		plate.motionZ = (world.rand.nextDouble() - 0.5D) * PLATE_LAUNCH_SPREAD;
-		diag("lid launch upward special=" + special);
+		plate.motionX = 0.0D;
+		plate.motionZ = 0.0D;
 		for (int k = 0; k < PLATE_STEAM_TICKS; k++) {
 			final int step = k;
 			DelayedTick.scheduleWorldStart(world, step, delayed -> lidSteam(delayed, plate, bounds, lidSteamColor));
 		}
-		diag("lid launch special=" + special + " color=" + lidSteamColor);
-		plate.spin = (world.rand.nextBoolean() ? 1.0F : -1.0F) * PLATE_SPIN * (0.7F + world.rand.nextFloat() * 0.6F);
+		plate.setSpin((world.rand.nextBoolean() ? 1.0F : -1.0F) * PLATE_SPIN * (0.7F + world.rand.nextFloat() * 0.6F));
 		world.spawnEntity(plate);
 	}
 
@@ -1053,7 +1217,7 @@ public class RbmkJumpHandler {
 				if (!world.isBlockLoaded(scan)) continue;
 				TileEntity te = world.getTileEntity(scan);
 				if (!(te instanceof TileEntityRBMKBase)) continue;
-				pump((TileEntityRBMKBase) te, target);
+				pumpForce((TileEntityRBMKBase) te, target);
 			}
 		}
 	}
@@ -1072,13 +1236,12 @@ public class RbmkJumpHandler {
 		BlockPos origin = boiler.getPos();
 		List<Component> components = gatherComponents(world, origin);
 		List<Component> columnSpace = gatherColumnSpace(world, components);
-		diag("pressureBurst at " + origin + " components=" + components.size() + " columnSpace=" + columnSpace.size());
 		int height = Math.max(RBMKDials.getColumnHeight(world), 1);
 		int[] bounds = bounds(components, origin);
+		FIRST_BURST_DAY.put(reactorKey(world, bounds), world.isDaytime());
 		boolean red = consumeRedBurst(world, origin);
 		if (!red && reactorHasDigammaRod(world, origin, true)) {
 			red = true;
-			diag("special burst: digamma rod found in reactor, all steam goes red");
 		}
 		int steamColor = red ? RED_STEAM_COLOR : RISE_STEAM_COLOR;
 		List<BlockPos> tops = new ArrayList<>();
@@ -1139,7 +1302,6 @@ public class RbmkJumpHandler {
 			}
 			spawnPlate(world, tops, topStates, bounds, topTints, topLifts, topRodColors, red);
 		}
-		diag("plate lifted=" + lifted.size());
 		DelayedTick.scheduleWorldStart(world, AFTERMATH_DELAY, delayed -> aftermathBurst(delayed, origin, debris, components, columnSpace, lifted));
 		scheduleSteamRise(world, origin, tops, bounds, height, steamColor);
 	}
@@ -1175,9 +1337,7 @@ public class RbmkJumpHandler {
 				ExplosionLarge.spawnRubble(world, x, y, z, PLATE_IMPACT_RUBBLE);
 				ExplosionLarge.spawnParticles(world, x, y + 1.0D, z, 12);
 			}
-			diag("plate impact at " + cx + "," + cy + "," + cz + " broken=" + broken + " heavy=" + heavy);
 		} catch (Throwable throwable) {
-			diag("plate impact error: " + throwable);
 		}
 	}
 
@@ -1227,7 +1387,6 @@ public class RbmkJumpHandler {
 			packetClass.getMethod("setPos", BlockPos.class).invoke(packet, new BlockPos(x, y, z));
 			PacketThreading.createSendToAllTrackingThreadedPacket((ThreadedPacket) packet, new NetworkRegistry.TargetPoint(world.provider.getDimension(), x, y, z, (double) range));
 		} catch (Throwable throwable) {
-			diag("shake packet error: " + throwable);
 		}
 	}
 
@@ -1305,19 +1464,20 @@ public class RbmkJumpHandler {
 
 	public static void aftermathBurst(World world, BlockPos origin, Block debris, List<Component> components, List<Component> columnSpace, Set<BlockPos> lifted) {
 		if (world == null) return;
-		diag("aftermathBurst at " + origin + " components=" + components.size());
 		shakeCamera(world, (double) origin.getX() + 0.5D, (double) origin.getY() + 1.0D, (double) origin.getZ() + 0.5D, SHAKE_RANGE_BLAST, SHAKE_BLAST);
 		int[] box = bounds(components, origin);
+		Boolean firstDayValue = FIRST_BURST_DAY.remove(reactorKey(world, box));
+		boolean firstDay = firstDayValue != null ? firstDayValue.booleanValue() : world.isDaytime();
+		if (!firstDay) PacketNTMITSkyTint.send(world, (double) origin.getX() + 0.5D, (double) origin.getY() + 1.0D, (double) origin.getZ() + 0.5D);
 		for (EntityLidPlate plate : world.getEntitiesWithinAABB(EntityLidPlate.class, new AxisAlignedBB(origin).grow(64.0D))) {
 			try {
+				if (!plate.landed) continue;
 				if (plateEdgeDistance(plate, box) >= PLATE_BLAST_MARGIN) continue;
 				plate.blast();
 			} catch (Throwable throwable) {
-				diag("plate blast error: " + throwable);
 			}
 		}
 		boolean specialReactor = reactorHasDigammaRod(world, origin, true);
-		if (specialReactor) diag("second explosion is a digamma zeroing (no restore, no meltdown)");
 		TileEntityRBMKBase anchor = null;
 		if (!specialReactor) {
 		for (Component component : components) {
@@ -1351,7 +1511,6 @@ public class RbmkJumpHandler {
 				allowMeltdown = true;
 				anchor.meltdown();
 			} catch (Throwable throwable) {
-				diag("aftermath meltdown error: " + throwable);
 				throwable.printStackTrace();
 			} finally {
 				allowMeltdown = false;
@@ -1366,6 +1525,110 @@ public class RbmkJumpHandler {
 		smokeColumn(world, origin, box, columnHeight);
 		smotherFire(world, origin);
 		cleanNeutronCache(world, origin);
+		if (!specialReactor) {
+			final int[] blueBox = box;
+			final int blueHeight = columnHeight;
+			final boolean blueDay = firstDay;
+			double blueCenterX = ((double) box[0] + (double) box[1] + 1.0D) * 0.5D;
+			double blueCenterZ = ((double) box[2] + (double) box[3] + 1.0D) * 0.5D;
+			double blueBaseY = (double) origin.getY() + (double) Math.max(blueHeight, 1) + 2.0D;
+			final double blueDistance = nearestPlayerDistance(world, blueCenterX, blueBaseY, blueCenterZ, blueBaseY + 8192.0D);
+			DelayedTick.scheduleWorldStart(world, 60, delayed -> spawnBlueLight(delayed, origin, blueBox, blueHeight, blueDay, blueDistance));
+		}
+	}
+
+	public static void spawnBlueLight(World world, BlockPos origin, int[] box, int height, boolean day, double distance) {
+		if (world == null || world.isRemote || origin == null || box == null) return;
+		double centerX = ((double) box[0] + (double) box[1] + 1.0D) * 0.5D;
+		double centerZ = ((double) box[2] + (double) box[3] + 1.0D) * 0.5D;
+		double baseY = (double) origin.getY() + (double) Math.max(height, 1) + 2.0D;
+		EntityRBMKBlueLight light = new EntityRBMKBlueLight(world, centerX, baseY, centerZ, 15.0F, baseY + 8192.0D);
+		light.maxAge = 600;
+		light.fadeOutTicks = 40;
+		light.timeAlpha = day ? 0.0F : 1.0F;
+		light.timeLocked = true;
+		light.capturedDistance = distance;
+		world.spawnEntity(light);
+	}
+
+	private static double nearestPlayerDistance(World world, double x, double baseY, double z, double topY) {
+		if (world == null) return Double.MAX_VALUE;
+		double best = Double.MAX_VALUE;
+		for (Entity player : world.playerEntities) {
+			double dx = player.posX - x;
+			double dz = player.posZ - z;
+			double y = MathHelper.clamp(player.posY, baseY, topY);
+			double dy = player.posY - y;
+			double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+			if (distance < best) best = distance;
+		}
+		return best;
+	}
+
+	public static BlockPos reactorCore(World world, BlockPos pos) {
+		if (world == null || pos == null) return null;
+		if (!(world.getBlockState(pos).getBlock() instanceof RBMKBase rbmk)) return null;
+		int[] core = rbmk.findCore(world, pos.getX(), pos.getY(), pos.getZ());
+		if (core == null) return null;
+		return new BlockPos(core[0], core[1], core[2]);
+	}
+
+	public static void scheduleSteamExplosion(World world, BlockPos core) {
+		if (world == null || world.isRemote || core == null) return;
+		DelayedTick.scheduleWorldStart(world, DYATLOV_STEAM_DELAY, delayed -> {
+			TileEntity te = delayed.getTileEntity(core);
+			if (!(te instanceof TileEntityRBMKBase base)) return;
+			TileEntityRBMKBoiler boiler = null;
+			for (Component component : gatherComponents(delayed, core)) {
+				TileEntity found = delayed.getTileEntity(component.pos);
+				if (found instanceof TileEntityRBMKBoiler rbmkBoiler) {
+					boiler = rbmkBoiler;
+					break;
+				}
+			}
+			if (boiler != null) {
+				steamBurst(boiler);
+			} else {
+				pressureBurst(base, true);
+			}
+		});
+	}
+
+	public static void quickMeltdown(World world, BlockPos core) {
+		if (world == null || world.isRemote || core == null) return;
+		int marked = 0;
+		for (Component component : gatherComponents(world, core)) {
+			TileEntity te = world.getTileEntity(component.pos);
+			if (!(te instanceof TileEntityRBMKRod rod)) continue;
+			ItemStack stack = rod.inventory.getStackInSlot(0);
+			if (stack.isEmpty() || !(stack.getItem() instanceof ItemRBMKRod)) continue;
+			forceOverheat(world, rod.getPos());
+			marked++;
+		}
+	}
+
+	public static void forceOverheat(World world, BlockPos pos) {
+		if (world == null || pos == null) return;
+		Set<BlockPos> positions = FORCED_OVERHEAT.get(world);
+		if (positions == null) {
+			positions = new HashSet<BlockPos>();
+			FORCED_OVERHEAT.put(world, positions);
+		}
+		positions.add(pos);
+	}
+
+	public static boolean isForcedOverheat(World world, BlockPos pos) {
+		if (world == null || pos == null) return false;
+		Set<BlockPos> positions = FORCED_OVERHEAT.get(world);
+		return positions != null && positions.contains(pos);
+	}
+
+	public static void clearForcedOverheat(World world, BlockPos pos) {
+		if (world == null || pos == null) return;
+		Set<BlockPos> positions = FORCED_OVERHEAT.get(world);
+		if (positions == null) return;
+		positions.remove(pos);
+		if (positions.isEmpty()) FORCED_OVERHEAT.remove(world);
 	}
 
 	private static double plateEdgeDistance(EntityLidPlate plate, int[] box) {
@@ -1404,7 +1667,6 @@ public class RbmkJumpHandler {
 				}
 			}
 		}
-		diag("wreck sweep converted=" + converted);
 	}
 
 	public static Block smolderBlock() {
@@ -1453,7 +1715,6 @@ public class RbmkJumpHandler {
 			te.getClass().getMethod("setScale", float.class).invoke(te, scale);
 		} catch (Throwable throwable) {
 		}
-		diag("smoke column at " + target + " scale=" + scale);
 	}
 
 	public static final double DIGAMMA_MELTDOWN_HEAT = 2000.0D;
@@ -1471,6 +1732,91 @@ public class RbmkJumpHandler {
 		return ItemRBMKRod.getHullHeat(stack) > fuel.meltingPoint;
 	}
 
+	public static boolean isOverheatingRod(TileEntityRBMKRod rod) {
+		if (rod == null) return false;
+		World world = rod.getWorld();
+		if (world == null) return false;
+		return isForcedOverheat(world, rod.getPos()) || rodAtMeltingPoint(rod);
+	}
+
+	public static boolean hasWaterForOverheat(TileEntityRBMKRod rod) {
+		if (rod == null) return false;
+		World world = rod.getWorld();
+		if (world == null) return false;
+		if (rod instanceof TileEntityRBMKRodReaSim) {
+			if (rod.reasimWater > 0) return true;
+			int height = Math.max(RBMKDials.getColumnHeight(world), 1);
+			for (int y = 1; y <= height; y++) {
+				TileEntity te = world.getTileEntity(rod.getPos().up(y));
+				if (te instanceof TileEntityRBMKBase base && base.reasimWater > 0) return true;
+			}
+			return false;
+		}
+		BlockPos center = rod.getPos();
+		for (int dx = -1; dx <= 1; dx++) {
+			for (int dz = -1; dz <= 1; dz++) {
+				TileEntity te = world.getTileEntity(center.add(dx, 0, dz));
+				if (!(te instanceof TileEntityRBMKBoiler boiler)) continue;
+				if (boiler.feed.getFill() > 0) return true;
+			}
+		}
+		return false;
+	}
+
+	public static boolean hasOverheatingRodNear(World world, BlockPos center) {
+		if (world == null || center == null) return false;
+		for (int dx = -1; dx <= 1; dx++) {
+			for (int dz = -1; dz <= 1; dz++) {
+				TileEntity te = world.getTileEntity(center.add(dx, 0, dz));
+				if (te instanceof TileEntityRBMKRod rod && isOverheatingRod(rod)) return true;
+			}
+		}
+		return false;
+	}
+
+	public static boolean reasimOverheatBoost(TileEntityRBMKBase te) {
+		if (te == null || te.reasimWater <= 0) return false;
+		World world = te.getWorld();
+		if (world == null) return false;
+		if (te instanceof TileEntityRBMKRod rod) return isOverheatingRod(rod);
+		int height = Math.max(RBMKDials.getColumnHeight(world), 1);
+		BlockPos pos = te.getPos();
+		for (int y = -height; y <= height; y++) {
+			TileEntity found = world.getTileEntity(pos.up(y));
+			if (found instanceof TileEntityRBMKRod rod && isOverheatingRod(rod)) return true;
+		}
+		return false;
+	}
+
+	private static Method boilerHeatMethod;
+	private static Method reasimSpeedMethod;
+
+	public static double boilerHeatConsumption(World world) {
+		if (world == null) return 0.1D;
+		try {
+			if (boilerHeatMethod == null) {
+				boilerHeatMethod = RBMKDials.class.getDeclaredMethod("getBoilerHeatConsumption", World.class);
+				boilerHeatMethod.setAccessible(true);
+			}
+			return ((Double) boilerHeatMethod.invoke(null, world)).doubleValue();
+		} catch (Throwable throwable) {
+			return 0.1D;
+		}
+	}
+
+	public static double reasimBoilerSpeed(World world) {
+		if (world == null) return 0.05D;
+		try {
+			if (reasimSpeedMethod == null) {
+				reasimSpeedMethod = RBMKDials.class.getDeclaredMethod("getReaSimBoilerSpeed", World.class);
+				reasimSpeedMethod.setAccessible(true);
+			}
+			return ((Double) reasimSpeedMethod.invoke(null, world)).doubleValue();
+		} catch (Throwable throwable) {
+			return 0.05D;
+		}
+	}
+
 	public static double overheatReactivity(TileEntityRBMKRod rod, double inFlux) {
 		if (!rodAtMeltingPoint(rod)) return inFlux;
 		if (!steamNotYetAtBurst(rod)) return inFlux;
@@ -1481,22 +1827,16 @@ public class RbmkJumpHandler {
 		if (column == null) return false;
 		World world = column.getWorld();
 		if (world == null || world.isRemote) return false;
-		int reasim = column.reasimSteam;
-		double ratio = 0.0D;
+		double ratio = columnFraction(world, column);
 		BlockPos pos = column.getPos();
 		for (int dx = -NEIGHBOUR_RADIUS; dx <= NEIGHBOUR_RADIUS; dx++) {
 			for (int dz = -NEIGHBOUR_RADIUS; dz <= NEIGHBOUR_RADIUS; dz++) {
 				BlockPos scan = new BlockPos(pos.getX() + dx, pos.getY(), pos.getZ() + dz);
 				if (!world.isBlockLoaded(scan)) continue;
-				TileEntity te = world.getTileEntity(scan);
-				if (te instanceof TileEntityRBMKBase base) reasim = Math.max(reasim, base.reasimSteam);
-				if (te instanceof TileEntityRBMKBoiler boiler) {
-					int threshold = burstThreshold(boiler.steam.getTankType());
-					if (threshold > 0) ratio = Math.max(ratio, (double) boiler.steam.getFill() / (double) threshold);
-				}
+				ratio = Math.max(ratio, columnFraction(world, world.getTileEntity(scan)));
 			}
 		}
-		return reasim < REASIM_BURST_THRESHOLD && ratio < 1.0D;
+		return ratio < 1.0D;
 	}
 
 	public static void overheatFlames(World world, BlockPos base, int height) {
@@ -1513,7 +1853,6 @@ public class RbmkJumpHandler {
 
 	public static void moltenColumn(World world, BlockPos base, int height) {
 		if (world == null || world.isRemote) return;
-		diag("overheat meltdown at " + base + " height=" + height);
 		if (!world.isBlockLoaded(base)) return;
 		Block corium = ModBlocks.corium_block;
 		if (corium == null) return;

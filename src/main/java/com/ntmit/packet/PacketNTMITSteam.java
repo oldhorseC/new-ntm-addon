@@ -50,7 +50,6 @@ public class PacketNTMITSteam implements IMessage {
 		try {
 			NETWORK.sendToAllAround(new PacketNTMITSteam(x, y, z, spread, count, base, max, life, color, rise), new NetworkRegistry.TargetPoint(world.provider.getDimension(), x, y, z, 200.0D));
 		} catch (Throwable throwable) {
-			System.out.println("[ntm-it][diag] steam packet error: " + throwable);
 		}
 	}
 

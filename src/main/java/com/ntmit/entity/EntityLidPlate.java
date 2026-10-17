@@ -67,6 +67,7 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 	private static final DataParameter<Boolean> PLATE_RED = EntityDataManager.<Boolean>createKey(EntityLidPlate.class, DataSerializers.BOOLEAN);
 	private static final DataParameter<Float> PLATE_ROLL = EntityDataManager.<Float>createKey(EntityLidPlate.class, DataSerializers.FLOAT);
 	private static final DataParameter<Float> PLATE_TUMBLE = EntityDataManager.<Float>createKey(EntityLidPlate.class, DataSerializers.FLOAT);
+	private static final DataParameter<Float> PLATE_SPIN = EntityDataManager.<Float>createKey(EntityLidPlate.class, DataSerializers.FLOAT);
 	private static final DataParameter<Integer> PLATE_AGE = EntityDataManager.<Integer>createKey(EntityLidPlate.class, DataSerializers.VARINT);
 	private int smokeLandTicks;
 	private int errorTicks;
@@ -77,6 +78,10 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 	private int ntmitCoreMinZ;
 	private int ntmitCoreMaxZ;
 	private boolean ntmitCoreSet;
+	private int ntmitFootMinX;
+	private int ntmitFootMaxX;
+	private int ntmitFootMinZ;
+	private int ntmitFootMaxZ;
 
 	public boolean isSpecialPlate() {
 		return this.dataManager.get(PLATE_RED).booleanValue();
@@ -88,6 +93,28 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 		this.ntmitCoreMinZ = Math.min(minZ, maxZ);
 		this.ntmitCoreMaxZ = Math.max(minZ, maxZ);
 		this.ntmitCoreSet = true;
+	}
+
+	public void setSpin(float spin) {
+		this.spin = spin;
+		if (this.world != null && !this.world.isRemote) this.dataManager.set(PLATE_SPIN, Float.valueOf(spin));
+	}
+
+	private void updateFootprint() {
+		int minX = 0;
+		int maxX = 0;
+		int minZ = 0;
+		int maxZ = 0;
+		for (int i = 0; i < this.count; i++) {
+			minX = Math.min(minX, this.offsets[i * 3]);
+			maxX = Math.max(maxX, this.offsets[i * 3]);
+			minZ = Math.min(minZ, this.offsets[i * 3 + 2]);
+			maxZ = Math.max(maxZ, this.offsets[i * 3 + 2]);
+		}
+		this.ntmitFootMinX = minX;
+		this.ntmitFootMaxX = maxX;
+		this.ntmitFootMinZ = minZ;
+		this.ntmitFootMaxZ = maxZ;
 	}
 
 	public EntityLidPlate(World world) {
@@ -122,6 +149,7 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 		this.pushY = this.posY;
 		this.groundY = this.posY - RbmkJumpHandler.PLATE_EMBED_DEPTH;
 		this.sanitize();
+		this.updateFootprint();
 		this.applySize();
 	}
 
@@ -175,7 +203,6 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 		this.tints = tints;
 		this.lifts = lifts;
 		this.rodColors = colors;
-		RbmkJumpHandler.diag("plate sanitized entries " + before + " -> " + kept);
 	}
 
 	public net.minecraft.util.math.AxisAlignedBB crushBox() {
@@ -222,6 +249,7 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 		this.dataManager.register(PLATE_RED, Boolean.FALSE);
 		this.dataManager.register(PLATE_ROLL, Float.valueOf(0.0F));
 		this.dataManager.register(PLATE_TUMBLE, Float.valueOf(0.0F));
+		this.dataManager.register(PLATE_SPIN, Float.valueOf(0.0F));
 		this.dataManager.register(PLATE_AGE, Integer.valueOf(0));
 	}
 
@@ -241,9 +269,10 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 				this.blasted = this.dataManager.get(PLATE_BLASTED).booleanValue();
 				this.roll = this.dataManager.get(PLATE_ROLL).floatValue();
 				this.tumble = this.dataManager.get(PLATE_TUMBLE).floatValue();
+				this.spin = this.dataManager.get(PLATE_SPIN).floatValue();
 				this.age = this.dataManager.get(PLATE_AGE).intValue();
 			} else {
-				if (!this.landed && this.age > 1) {
+				if (!this.landed) {
 					this.roll += this.spin;
 					this.tumble += this.spin * 0.7F;
 				}
@@ -266,8 +295,8 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 				this.noClip = true;
 				double beforeY = this.posY;
 				this.move(MoverType.SELF, this.motionX, this.motionY, this.motionZ);
-				if (this.homeSet) {
-					double limit = this.homeRadius + RbmkJumpHandler.PLATE_BLAST_MARGIN;
+				if (this.homeSet && !this.ntmitCoreSet) {
+					double limit = this.homeRadius + (this.blasted ? 2.0D : 0.0D);
 					double dx = this.posX - this.homeX;
 					double dz = this.posZ - this.homeZ;
 					double d2 = dx * dx + dz * dz;
@@ -285,8 +314,23 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 					}
 				}
 				if (this.ntmitCoreSet) {
-					double limitX = net.minecraft.util.math.MathHelper.clamp(this.posX, (double) this.ntmitCoreMinX + 0.5D, (double) this.ntmitCoreMaxX + 0.5D);
-					double limitZ = net.minecraft.util.math.MathHelper.clamp(this.posZ, (double) this.ntmitCoreMinZ + 0.5D, (double) this.ntmitCoreMaxZ + 0.5D);
+					double pad = this.blasted ? 2.0D : 0.0D;
+					double minX = (double) this.ntmitCoreMinX - pad - (double) this.ntmitFootMinX;
+					double maxX = (double) this.ntmitCoreMaxX + pad - (double) this.ntmitFootMaxX;
+					double minZ = (double) this.ntmitCoreMinZ - pad - (double) this.ntmitFootMinZ;
+					double maxZ = (double) this.ntmitCoreMaxZ + pad - (double) this.ntmitFootMaxZ;
+					if (minX > maxX) {
+						double mid = (minX + maxX) * 0.5D;
+						minX = mid;
+						maxX = mid;
+					}
+					if (minZ > maxZ) {
+						double mid = (minZ + maxZ) * 0.5D;
+						minZ = mid;
+						maxZ = mid;
+					}
+					double limitX = net.minecraft.util.math.MathHelper.clamp(this.posX, minX, maxX);
+					double limitZ = net.minecraft.util.math.MathHelper.clamp(this.posZ, minZ, maxZ);
 					if (limitX != this.posX) {
 						this.posX = limitX;
 						this.motionX = 0.0D;
@@ -296,8 +340,16 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 						this.motionZ = 0.0D;
 					}
 				}
-				if (this.motionY <= 0.0D && this.posY <= this.groundY) {
-					this.posY = this.groundY;
+				double landingY = this.groundY;
+				if (this.blasted) {
+					int bx = (int) Math.floor(this.posX);
+					int bz = (int) Math.floor(this.posZ);
+					if (!this.ntmitCoreSet || bx < this.ntmitCoreMinX || bx > this.ntmitCoreMaxX || bz < this.ntmitCoreMinZ || bz > this.ntmitCoreMaxZ) {
+						landingY = (double) this.world.getHeight(bx, bz) + 0.1D;
+					}
+				}
+				if (this.motionY <= 0.0D && this.posY <= landingY) {
+					this.posY = landingY;
 					this.land();
 				} else if (this.onGround && this.motionY <= 0.0D) {
 					this.land();
@@ -316,9 +368,7 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 			}
 		} catch (Throwable throwable) {
 			if (++this.errorTicks < 200) {
-				if (this.errorTicks % 40 == 1) RbmkJumpHandler.diag("plate update error: " + throwable);
 			} else {
-				RbmkJumpHandler.diag("plate update error: " + throwable);
 				if (!this.world.isRemote) {
 					this.fracture();
 				}
@@ -345,6 +395,10 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 			minZ = Math.min(minZ, this.offsets[i * 3 + 2]);
 			maxZ = Math.max(maxZ, this.offsets[i * 3 + 2]);
 		}
+		this.ntmitFootMinX = minX;
+		this.ntmitFootMaxX = maxX;
+		this.ntmitFootMinZ = minZ;
+		this.ntmitFootMaxZ = maxZ;
 		this.homeRadius = (double) Math.max(Math.max(maxX + 1, -minX), Math.max(maxZ + 1, -minZ));
 		if (!this.homeSet) {
 			this.homeSet = true;
@@ -371,6 +425,8 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 	private void land() {
 		this.landed = true;
 		this.wrecked = true;
+		this.stuckTicks = 0;
+		this.smokeLandTicks = 0;
 		this.dataManager.set(PLATE_LANDED, Boolean.TRUE);
 		this.dataManager.set(PLATE_WRECKED, Boolean.TRUE);
 		this.motionX = 0.0D;
@@ -380,6 +436,9 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 		if (this.world.isRemote) return;
 		try {
 			this.crater();
+			if (!this.blasted) {
+				RbmkJumpHandler.sendSteam(this.world, this.posX + 0.5D, this.posY + 1.5D, this.posZ + 0.5D, 4.0F, 40, 1.5F, 3.5F, 60, RbmkJumpHandler.RISE_STEAM_COLOR, 0.8F);
+			}
 			BlockPos base = new BlockPos(this.posX, this.posY, this.posZ);
 			for (int i = 0; i < 64; i++) {
 				double dx = this.world.rand.nextGaussian() * 1.5D;
@@ -390,10 +449,11 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 				this.world.spawnParticle(EnumParticleTypes.BLOCK_DUST, x, y, z, dx * 0.12D, 0.35D + this.world.rand.nextDouble() * 0.35D, dz * 0.12D, Block.getStateId(this.world.getBlockState(new BlockPos(x, y - 1.5D, z))));
 			}
 			this.world.playSound(null, this.posX, this.posY, this.posZ, com.hbm.lib.HBMSoundHandler.blockDebris, SoundCategory.BLOCKS, 7.0F, 0.55F + this.world.rand.nextFloat() * 0.2F);
-			if (this.blasted) RbmkJumpHandler.shakeLand(this.world, this.posX + 0.5D, this.posY + 0.5D, this.posZ + 0.5D);
+			if (this.blasted) {
+				RbmkJumpHandler.shakeLand(this.world, this.posX + 0.5D, this.posY + 0.5D, this.posZ + 0.5D);
+			}
 			this.scatterParts();
 		} catch (Throwable throwable) {
-			RbmkJumpHandler.diag("plate land error: " + throwable);
 		}
 	}
 
@@ -413,8 +473,9 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 				int y = (int) Math.floor(this.posY + (double) offset.getY() + step * (double) s);
 				for (int up = 0; up <= 1; up++) {
 					BlockPos pos = new BlockPos(x, y + up, z);
-					if (!this.pushable(pos, this.world.getBlockState(pos), false, !this.blasted)) continue;
-					this.world.destroyBlock(pos, false);
+					IBlockState state = this.world.getBlockState(pos);
+					if (!this.pushable(pos, state, false, !this.blasted)) continue;
+					this.launchBlock(pos, state);
 				}
 			}
 		}
@@ -444,14 +505,23 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 	private boolean clearBlock(BlockPos pos, boolean visual) {
 		IBlockState state = this.world.getBlockState(pos);
 		if (!this.pushable(pos, state, true, !this.blasted)) return false;
-		this.world.setBlockToAir(pos);
-		if (!visual || this.world.isRemote) return true;
-		EntityFallingBlock falling = new EntityFallingBlock(this.world, (double) pos.getX() + 0.5D, (double) pos.getY() + 0.5D, (double) pos.getZ() + 0.5D, state);
-		falling.motionY = 0.2D + this.world.rand.nextDouble() * 0.3D;
-		falling.motionX = (this.world.rand.nextDouble() - 0.5D) * 0.4D;
-		falling.motionZ = (this.world.rand.nextDouble() - 0.5D) * 0.4D;
-		this.world.spawnEntity(falling);
+		if (!visual || this.world.isRemote) {
+			this.world.setBlockToAir(pos);
+			return true;
+		}
+		this.launchBlock(pos, state);
 		return true;
+	}
+
+	private void launchBlock(BlockPos pos, IBlockState state) {
+		this.world.setBlockToAir(pos);
+		if (this.world.isRemote || NTMITWorldRules.entitySummonDisabled(this.world)) return;
+		EntityFallingBlock falling = new EntityFallingBlock(this.world, (double) pos.getX() + 0.5D, (double) pos.getY() + 0.5D, (double) pos.getZ() + 0.5D, state);
+		falling.fallTime = 1;
+		falling.motionX = this.motionX * 0.85D + (this.world.rand.nextDouble() - 0.5D) * 0.15D;
+		falling.motionY = this.motionY * 0.85D + (this.motionY >= 0.0D ? 0.08D + this.world.rand.nextDouble() * 0.15D : 0.0D);
+		falling.motionZ = this.motionZ * 0.85D + (this.world.rand.nextDouble() - 0.5D) * 0.15D;
+		this.world.spawnEntity(falling);
 	}
 
 	private boolean pushable(BlockPos pos, IBlockState state, boolean force, boolean keepWreck) {
@@ -575,22 +645,25 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 
 	public void blast() {
 		if (this.world.isRemote) return;
+		if (!this.landed) return;
 		this.landed = false;
 		this.blasted = true;
 		this.dataManager.set(PLATE_BLASTED, Boolean.TRUE);
 		this.dataManager.set(PLATE_LANDED, Boolean.FALSE);
 		this.age = 0;
-		if (this.dataManager.get(PLATE_RED).booleanValue()) {
-			double angle = this.world.rand.nextDouble() * Math.PI * 2.0D;
-			this.motionY = RbmkJumpHandler.PLATE_BLAST_VY * RbmkJumpHandler.PLATE_SIDE_VY_RATIO;
-			this.motionX = Math.cos(angle) * RbmkJumpHandler.PLATE_SIDE_SPEED;
-			this.motionZ = Math.sin(angle) * RbmkJumpHandler.PLATE_SIDE_SPEED;
-		} else {
-			this.motionY = RbmkJumpHandler.PLATE_BLAST_VY;
-			this.motionX = (this.world.rand.nextDouble() - 0.5D) * RbmkJumpHandler.PLATE_BLAST_SPREAD * 2.0D;
-			this.motionZ = (this.world.rand.nextDouble() - 0.5D) * RbmkJumpHandler.PLATE_BLAST_SPREAD * 2.0D;
+		this.stuckTicks = 0;
+		this.smokeLandTicks = 0;
+		double size = 8.0D;
+		if (this.ntmitCoreSet) {
+			size = Math.max(1.0D, Math.max((double) (this.ntmitCoreMaxX - this.ntmitCoreMinX + 1), (double) (this.ntmitCoreMaxZ - this.ntmitCoreMinZ + 1)));
 		}
-		this.spin = (this.world.rand.nextBoolean() ? 1.0F : -1.0F) * RbmkJumpHandler.PLATE_SPIN * (0.7F + this.world.rand.nextFloat() * 0.8F);
+		double angle = this.world.rand.nextDouble() * Math.PI * 2.0D;
+		double speed = Math.min(2.4D, 0.25D + size * 0.08D) * (0.55D + this.world.rand.nextDouble() * 0.45D);
+		if (this.dataManager.get(PLATE_RED).booleanValue()) speed = RbmkJumpHandler.PLATE_SIDE_SPEED * (0.8D + this.world.rand.nextDouble() * 0.4D);
+		this.motionY = RbmkJumpHandler.PLATE_BLAST_VY;
+		this.motionX = Math.cos(angle) * speed;
+		this.motionZ = Math.sin(angle) * speed;
+		this.setSpin((this.world.rand.nextBoolean() ? 1.0F : -1.0F) * RbmkJumpHandler.PLATE_SPIN * (0.7F + this.world.rand.nextFloat() * 0.8F));
 		for (int i = 0; i < 40; i++) {
 			double dx = this.world.rand.nextGaussian();
 			double dz = this.world.rand.nextGaussian();
@@ -622,7 +695,6 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 		}
 		this.world.playSound(null, this.posX, this.posY, this.posZ, com.hbm.lib.HBMSoundHandler.blockDebris, SoundCategory.BLOCKS, 8.0F, 0.7F);
 		} catch (Throwable throwable) {
-			RbmkJumpHandler.diag("plate fracture error: " + throwable);
 		}
 		this.setDead();
 	}
@@ -657,7 +729,6 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 			}
 		}
 		this.world.playSound(null, this.posX, this.posY, this.posZ, com.hbm.lib.HBMSoundHandler.blockDebris, SoundCategory.BLOCKS, 6.0F, 0.9F);
-		RbmkJumpHandler.diag("plate dismantled at " + this.getPosition() + " bars=" + given);
 		this.setDead();
 	}
 
@@ -685,9 +756,11 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 		this.dataManager.set(PLATE_WRECKED, Boolean.valueOf(this.wrecked));
 		this.dataManager.set(PLATE_ROLL, Float.valueOf(this.roll));
 		this.dataManager.set(PLATE_TUMBLE, Float.valueOf(this.tumble));
+		this.dataManager.set(PLATE_SPIN, Float.valueOf(this.spin));
 		this.dataManager.set(PLATE_AGE, Integer.valueOf(this.age));
 		this.count = Math.min(this.count, Math.min(this.states.length, Math.min(this.tints.length, Math.min(this.lifts.length, Math.min(this.rodColors.length, this.offsets.length / 3)))));
 		this.sanitize();
+		this.updateFootprint();
 		this.applySize();
 	}
 
@@ -745,7 +818,9 @@ public class EntityLidPlate extends Entity implements IEntityAdditionalSpawnData
 		this.prevTumble = this.tumble;
 		this.dataManager.set(PLATE_ROLL, Float.valueOf(this.roll));
 		this.dataManager.set(PLATE_TUMBLE, Float.valueOf(this.tumble));
+		this.dataManager.set(PLATE_SPIN, Float.valueOf(this.spin));
 		this.dataManager.set(PLATE_AGE, Integer.valueOf(this.age));
+		this.updateFootprint();
 		this.applySize();
 	}
 

@@ -129,6 +129,7 @@ public class RbmkDebugRender {
 				float tumble = plate.prevTumble + (plate.tumble - plate.prevTumble) * interp;
 				GlStateManager.pushMatrix();
 				GlStateManager.translate(plate.posX - px, plate.posY - py, plate.posZ - pz);
+				GlStateManager.rotate(roll, 0.0F, 1.0F, 0.0F);
 				GlStateManager.rotate(roll, 0.0F, 0.0F, 1.0F);
 				GlStateManager.rotate(tumble, 1.0F, 0.0F, 0.0F);
 				buffer.begin(GL11.GL_LINES, DefaultVertexFormats.POSITION_COLOR);

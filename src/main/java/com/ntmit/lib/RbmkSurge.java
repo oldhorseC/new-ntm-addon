@@ -46,8 +46,10 @@ public class RbmkSurge {
 		World world = te.getWorld();
 		if (world == null || world.isRemote) return false;
 		if (overTemp(te)) return true;
-		BlockPos pos = te.getPos();
-		return RbmkFeedback.late(RbmkFeedback.cellTank(world, pos), Math.max(te.reasimSteam, RbmkFeedback.cellReasim(world, pos)));
+		RbmkFeedback.Cell cell = RbmkFeedback.cell(world, te.getPos());
+		double steam = RbmkSteamCurve.reasimFraction(te.reasimSteam);
+		if (cell != null) steam = Math.max(steam, Math.max(cell.tankFraction, cell.reasimFraction));
+		return RbmkSteamCurve.late(steam);
 	}
 
 	public static float channelProgress(TileEntityRBMKBase te) {
@@ -70,7 +72,7 @@ public class RbmkSurge {
 		if (p <= 0F) return base;
 		boolean over = overTemp(te);
 		double mult = over ? OVERHEAT_MULTIPLIER : 1.0D;
-		if (over || (cell != null && RbmkFeedback.late(cell.tank, Math.max(te.reasimSteam, cell.reasim)))) {
+		if (over || (cell != null && cell.late())) {
 			return base * (1.0D + NEUTRON_RATIO * (double) p) * mult;
 		}
 		return base + ADD_NEUTRON * (double) p * mult;
@@ -86,7 +88,7 @@ public class RbmkSurge {
 		if (p <= 0F) return base;
 		boolean over = overTemp(te);
 		double mult = over ? OVERHEAT_MULTIPLIER : 1.0D;
-		if (over || (cell != null && RbmkFeedback.late(cell.tank, Math.max(te.reasimSteam, cell.reasim)))) {
+		if (over || (cell != null && cell.late())) {
 			return Math.min(1.0D, Math.max(base, TRANSMITTANCE_MIN) * (1.0D + TRANSMITTANCE_RATIO * (double) p) * mult);
 		}
 		return Math.min(1.0D, base + ADD_TRANSMITTANCE * (double) p * mult);

@@ -61,6 +61,7 @@ public class RenderLidPlate extends Render<EntityLidPlate> {
 		Minecraft mc = Minecraft.getMinecraft();
 		GlStateManager.pushMatrix();
 		GlStateManager.translate(x, y, z);
+		GlStateManager.rotate(roll, 0.0F, 1.0F, 0.0F);
 		GlStateManager.rotate(roll, 0.0F, 0.0F, 1.0F);
 		GlStateManager.rotate(tumble, 1.0F, 0.0F, 0.0F);
 		GlStateManager.enableRescaleNormal();
@@ -154,7 +155,6 @@ public class RenderLidPlate extends Render<EntityLidPlate> {
 			}
 		} catch (Throwable throwable) {
 			ntmitRodFailed = true;
-			RbmkJumpHandler.diag("plate rod render failed: " + throwable);
 		}
 	}
 

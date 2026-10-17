@@ -17,12 +17,19 @@ public class ClientProxy extends ServerProxy {
 	public void registerRenderInfo() {
 
 		MinecraftForge.EVENT_BUS.register(new ModEventHandlerClient());
+		MinecraftForge.EVENT_BUS.register(new com.ntmit.render.RBMKBlueLightWorldRenderer());
 
 		ClientRegistry.bindTileEntitySpecialRenderer(com.ntmit.tileentity.TileEntityRBMKGauge3x3.class,
 				new com.ntmit.render.RenderRBMKGauge3x3());
 
 		net.minecraftforge.fml.client.registry.RenderingRegistry.registerEntityRenderingHandler(com.ntmit.entity.EntityLidPlate.class,
 				manager -> new com.ntmit.render.RenderLidPlate(manager));
+
+		net.minecraftforge.fml.client.registry.RenderingRegistry.registerEntityRenderingHandler(com.ntmit.entity.EntityRBMKBlueLight.class,
+				manager -> new com.ntmit.render.RenderRBMKBlueLight(manager));
+
+		net.minecraftforge.fml.client.registry.RenderingRegistry.registerEntityRenderingHandler(com.ntmit.entity.EntityRBMKBlueLightMarker.class,
+				manager -> new com.ntmit.render.RenderRBMKBlueLightMarker(manager));
 	}
 
 	@Override
@@ -40,6 +47,7 @@ public class ClientProxy extends ServerProxy {
 	@Override
 	public void preInit(FMLPreInitializationEvent evt) {
 		com.ntmit.packet.PacketNTMITSteam.register();
+		com.ntmit.packet.PacketNTMITSkyTint.register();
 		super.preInit(evt);
 	}
 

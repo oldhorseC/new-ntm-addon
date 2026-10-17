@@ -1,0 +1,6 @@
+{
+	"parent": "item/handheld",
+	"textures": {
+		"layer0": "ntm-it:items/meltdown_tool"
+	}
+}

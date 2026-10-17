@@ -110,8 +110,6 @@ public class RBMKConsoleSource implements IServerSource {
 		if (column instanceof RBMKColumn.FuelColumn fuel) {
 			if (name.equals("rodheat")) return Integer.toString((int) fuel.c_heat);
 			if (name.equals("depletion")) return Integer.toString((int) (100.0D - fuel.enrichment * 100.0D));
-			// xenon 在 HBM 里本就是百分数量级（见 RBMKColumn.FuelColumn 的 tooltip：(int)(xenon * 1000) / 1000 之后直接配 "%"），
-			// 所以这里不需要 ×100，保持原样即正确 —— 别再把它当分数"修"一遍。
 			if (name.equals("xenon")) return Integer.toString((int) fuel.xenon);
 		}
 		if (column instanceof RBMKColumn.BoilerColumn boiler) {
@@ -126,9 +124,6 @@ public class RBMKConsoleSource implements IServerSource {
 			return Integer.toString(cooler.cryo);
 		}
 		if (column instanceof RBMKColumn.ControlColumn control) {
-			// 控制棒深度（level）在 HBM 里是 0~1 的分数，对外一律按百分比给出：
-			// 与同文件 depletion 的写法、以及 HBM 自己 GUIRBMKConsole / 悬浮提示的 level*100 惯例一致。
-			// 旧写法 (int) control.level 会把它压成 0 或 1，屏幕上永远是 0%。
 			if (name.equals("level")) return Integer.toString((int) (control.level * 100.0D));
 			if (name.equals("color")) return Integer.toString(control.color);
 		}

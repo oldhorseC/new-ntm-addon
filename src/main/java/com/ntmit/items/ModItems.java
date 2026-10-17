@@ -11,6 +11,7 @@ public class ModItems {
 	public static final List<Item> ALL_ITEMS = new ArrayList<>();
 
 	public static final Item server_connector = new ItemITServerConnector("server_connector");
+	public static final Item dyatlov_steam_device = new ItemDyatlovSteamDevice("dyatlov_steam_device");
 
 	public static void preInit() {
 		for (Item item : ALL_ITEMS) {

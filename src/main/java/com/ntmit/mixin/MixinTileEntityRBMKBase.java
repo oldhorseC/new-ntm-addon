@@ -1,11 +1,13 @@
 package com.ntmit.mixin;
 
+import com.hbm.tileentity.machine.rbmk.RBMKDials;
 import com.hbm.tileentity.machine.rbmk.TileEntityRBMKBase;
 import com.ntmit.lib.NTMITWorldRules;
 import com.ntmit.lib.RbmkFeedback;
 import com.ntmit.lib.RbmkJumpHandler;
 import com.ntmit.lib.RbmkSurge;
 
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
 
 import java.lang.reflect.Field;
@@ -23,11 +25,16 @@ public abstract class MixinTileEntityRBMKBase {
 
 	@Unique private int ntmitReasimJumpCooldown;
 	@Unique private int ntmitSteamBefore;
-	@Unique private int ntmitBurstDelay;
 	@Unique private static Field ntmitLeafiaDamageField;
 
 	@Inject(method = {"update()V", "func_73660_a()V"}, at = @At("TAIL"), require = 1, remap = false)
 	private void ntmit$capLeafiaDamage(CallbackInfo ci) {
+		TileEntityRBMKBase te = (TileEntityRBMKBase) (Object) this;
+		World world = te.getWorld();
+		if (world != null && !world.isRemote) {
+			RbmkJumpHandler.tickCJumps(world, te.getPos());
+			RbmkJumpHandler.tickReactorBurst(world, te.getPos());
+		}
 		Field field = ntmitLeafiaDamageField();
 		if (field == null) return;
 		try {
@@ -40,7 +47,6 @@ public abstract class MixinTileEntityRBMKBase {
 	@Inject(method = "meltdown", at = @At("HEAD"), cancellable = true, require = 1, remap = false)
 	private void ntmit$gateMeltdown(CallbackInfo ci) {
 		if (RbmkJumpHandler.allowMeltdown) return;
-		RbmkJumpHandler.diag("meltdown vetoed at " + ((TileEntityRBMKBase) (Object) this).getPos());
 		ci.cancel();
 	}
 
@@ -66,36 +72,40 @@ public abstract class MixinTileEntityRBMKBase {
 		return RbmkJumpHandler.REASIM_STEAM_CAPACITY;
 	}
 
+	@Inject(method = "boilWater", at = @At("HEAD"), cancellable = true, require = 1, remap = false)
+	private void ntmit$boostReasimOverheat(CallbackInfo ci) {
+		TileEntityRBMKBase te = (TileEntityRBMKBase) (Object) this;
+		World world = te.getWorld();
+		if (world == null || world.isRemote) return;
+		if (!RbmkJumpHandler.reasimOverheatBoost(te)) return;
+		if (te.heat < 100.0D) return;
+		double heatConsumption = RbmkJumpHandler.boilerHeatConsumption(world);
+		if (heatConsumption <= 0.0D) return;
+		double availableHeat = (te.heat - 100.0D) / heatConsumption;
+		double availableWater = te.reasimWater;
+		double availableSpace = RbmkJumpHandler.REASIM_STEAM_CAPACITY - te.reasimSteam;
+		double speed = MathHelper.clamp(RbmkJumpHandler.reasimBoilerSpeed(world), 0.0D, 1.0D);
+		double normal = Math.floor(Math.min(availableHeat, Math.min(availableWater, availableSpace)) * speed);
+		if (normal <= 0.0D) {
+			ci.cancel();
+			return;
+		}
+		int waterUsed = (int) Math.floor(Math.min(availableWater, normal * 2.0D));
+		int steamProduced = (int) Math.floor(Math.min(availableSpace, normal * 3.0D));
+		te.reasimWater -= waterUsed;
+		te.reasimSteam += steamProduced;
+		te.heat -= waterUsed * heatConsumption;
+		ci.cancel();
+	}
+
 	@Inject(method = "boilWater", at = @At("HEAD"), require = 1, remap = false)
 	private void ntmit$reasimSteamJump(CallbackInfo ci) {
 		TileEntityRBMKBase te = (TileEntityRBMKBase) (Object) this;
 		World world = te.getWorld();
 		if (world == null || world.isRemote) return;
 		this.ntmitSteamBefore = te.reasimSteam;
-		boolean locked = this.ntmitBurstDelay > 0 && RbmkJumpHandler.reactorHasDigammaRod(world, te.getPos());
-		if (this.ntmitBurstDelay > 0) RbmkJumpHandler.pumpReactor(world, te.getPos(), this.ntmitBurstDelay);
-		if (te.reasimSteam >= RbmkJumpHandler.REASIM_BURST_THRESHOLD) {
-			RbmkJumpHandler.pollControlRods(world, te.getPos());
-			if (RbmkJumpHandler.az5ForcesBurst(world, te.getPos())) {
-				RbmkJumpHandler.az5Consume();
-				this.ntmitBurstDelay = 0;
-				RbmkJumpHandler.reasimBurst(te, world);
-			} else if (this.ntmitBurstDelay > 0 && RbmkJumpHandler.scramForcesBurst(world, te.getPos())) {
-				RbmkJumpHandler.scramConsume();
-				this.ntmitBurstDelay = 0;
-				RbmkJumpHandler.reasimBurst(te, world);
-			} else if (++this.ntmitBurstDelay >= RbmkJumpHandler.BURST_DELAY_TICKS) {
-				this.ntmitBurstDelay = 0;
-				RbmkJumpHandler.reasimBurst(te, world);
-			}
-		} else if (locked) {
-			if (++this.ntmitBurstDelay >= RbmkJumpHandler.BURST_DELAY_TICKS) {
-				this.ntmitBurstDelay = 0;
-				RbmkJumpHandler.reasimBurst(te, world);
-			}
-		} else {
-			this.ntmitBurstDelay = 0;
-		}
+		int elapsed = RbmkJumpHandler.reactorBurstElapsed(world, te.getPos());
+		if (elapsed > 0) RbmkJumpHandler.pumpReactor(world, te.getPos(), elapsed);
 		if (this.ntmitReasimJumpCooldown > 0) {
 			this.ntmitReasimJumpCooldown--;
 			return;

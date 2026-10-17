@@ -5,11 +5,13 @@ import com.hbm.inventory.fluid.Fluids;
 import com.hbm.inventory.fluid.tank.FluidTankNTM;
 import com.hbm.particle.helper.HbmEffectNT;
 import com.hbm.tileentity.machine.rbmk.RBMKColumn;
+import com.hbm.tileentity.machine.rbmk.RBMKDials;
 import com.hbm.tileentity.machine.rbmk.TileEntityRBMKBoiler;
 import com.ntmit.fluids.NTMITFluids;
 import com.ntmit.lib.NTMITWorldRules;
 import com.ntmit.lib.RbmkFeedback;
 import com.ntmit.lib.RbmkJumpHandler;
+import com.ntmit.lib.RbmkSteamCurve;
 import com.ntmit.lib.RbmkSurge;
 
 import net.minecraft.world.World;
@@ -27,11 +29,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class MixinTileEntityRBMKBoiler {
 
 	@Shadow(remap = false) public FluidTankNTM steam;
+	@Shadow(remap = false) protected int consumption;
 	@Shadow(remap = false) protected int output;
 
 	@Unique private int ntmitSteamJumpCooldown;
 	@Unique private int ntmitDiagTimer;
-	@Unique private int ntmitBurstDelay;
+	@Unique private boolean ntmitOverheatBoost;
 
 	@Inject(method = "<init>", at = @At("TAIL"), require = 1)
 	private void ntmit$steamCapacity(CallbackInfo ci) {
@@ -43,6 +46,7 @@ public abstract class MixinTileEntityRBMKBoiler {
 		TileEntityRBMKBoiler boiler = (TileEntityRBMKBoiler) (Object) this;
 		World world = boiler.getWorld();
 		if (world == null) return;
+		this.ntmitOverheatBoost = RbmkJumpHandler.hasOverheatingRodNear(world, boiler.getPos());
 		if (this.steam.getMaxFill() != RbmkJumpHandler.BOILER_STEAM_CAPACITY) this.steam.changeTankSize(RbmkJumpHandler.BOILER_STEAM_CAPACITY);
 		if (world.isRemote) return;
 		if (this.steam.getFill() > 0) return;
@@ -74,44 +78,23 @@ public abstract class MixinTileEntityRBMKBoiler {
 
 	@Inject(method = {"update()V", "func_73660_a()V"}, at = @At("TAIL"), require = 1, remap = false)
 	private void ntmit$steamFullJump(CallbackInfo ci) {
-		if (++this.ntmitDiagTimer >= 40) {
-			this.ntmitDiagTimer = 0;
-			int diagDamage = RbmkJumpHandler.readDamage((TileEntityRBMKBoiler) (Object) this);
-			int diagSpan = RbmkJumpHandler.STEAM_JUMP_TARGET_MAX - RbmkJumpHandler.STEAM_JUMP_TARGET_MIN;
-			float diagRamp = diagSpan > 0 ? Math.min(1.0F, Math.max(0.0F, (float) (diagDamage - RbmkJumpHandler.STEAM_JUMP_TARGET_MIN) / (float) diagSpan)) : 0.0F;
-			RbmkJumpHandler.diag("boiler " + ((TileEntityRBMKBoiler) (Object) this).getPos() + " fill=" + this.steam.getFill() + " damage=" + diagDamage + " ramp=" + diagRamp + " cooldown=" + this.ntmitSteamJumpCooldown);
-		}
 		TileEntityRBMKBoiler boiler = (TileEntityRBMKBoiler) (Object) this;
 		World world = boiler.getWorld();
 		if (world != null && !world.isRemote) {
-			RbmkJumpHandler.pollControlRods(world, boiler.getPos());
-			boolean locked = this.ntmitBurstDelay > 0 && RbmkJumpHandler.reactorHasDigammaRod(world, boiler.getPos());
-			if (this.ntmitBurstDelay > 0) RbmkJumpHandler.pumpReactor(world, boiler.getPos(), this.ntmitBurstDelay);
-			if (this.steam.getFill() >= RbmkJumpHandler.burstThreshold(this.steam.getTankType())) {
-				if (RbmkJumpHandler.az5ForcesBurst(world, boiler.getPos())) {
-					RbmkJumpHandler.az5Consume();
-					this.ntmitBurstDelay = 0;
-					RbmkJumpHandler.steamBurst(boiler);
-				} else if (this.ntmitBurstDelay > 0 && RbmkJumpHandler.scramForcesBurst(world, boiler.getPos())) {
-					RbmkJumpHandler.scramConsume();
-					this.ntmitBurstDelay = 0;
-					RbmkJumpHandler.steamBurst(boiler);
-				} else if (++this.ntmitBurstDelay >= RbmkJumpHandler.BURST_DELAY_TICKS) {
-					this.ntmitBurstDelay = 0;
-					RbmkJumpHandler.steamBurst(boiler);
-				}
-			} else if (locked) {
-				if (++this.ntmitBurstDelay >= RbmkJumpHandler.BURST_DELAY_TICKS) {
-					this.ntmitBurstDelay = 0;
-					RbmkJumpHandler.steamBurst(boiler);
-				}
-			} else {
-				this.ntmitBurstDelay = 0;
+			RbmkJumpHandler.tickCJumps(world, boiler.getPos());
+			RbmkJumpHandler.tickReactorBurst(world, boiler.getPos());
+			int burstElapsed = RbmkJumpHandler.reactorBurstElapsed(world, boiler.getPos());
+			if (++this.ntmitDiagTimer >= 40) {
+				this.ntmitDiagTimer = 0;
+				double fraction = RbmkSteamCurve.normalFraction(this.steam.getFill(), this.steam.getTankType());
+			}
+			if (burstElapsed > 0) {
+				RbmkJumpHandler.pumpReactor(world, boiler.getPos(), burstElapsed);
 			}
 		}
 		if (this.ntmitSteamJumpCooldown > 0) this.ntmitSteamJumpCooldown--;
 		if (this.ntmitSteamJumpCooldown > 0) return;
-		int cooldown = RbmkJumpHandler.steamFull((TileEntityRBMKBoiler) (Object) this, this.steam);
+		int cooldown = RbmkJumpHandler.steamFull(boiler, this.steam);
 		if (cooldown > 0) this.ntmitSteamJumpCooldown = cooldown;
 	}
 
@@ -120,11 +103,27 @@ public abstract class MixinTileEntityRBMKBoiler {
 		TileEntityRBMKBoiler boiler = (TileEntityRBMKBoiler) (Object) this;
 		World world = boiler.getWorld();
 		if (world == null || world.isRemote) return;
-		float boost = RbmkFeedback.tankBoost(this.steam.getFill()) + RbmkSurge.steamBoost(boiler);
+		float boost = RbmkFeedback.tankBoost(this.steam.getFill(), this.steam.getTankType()) + RbmkSurge.steamBoost(boiler);
 		if (boost <= 0F) return;
 		int extra = Math.round(this.output * boost);
 		if (extra <= 0) return;
 		this.steam.setFill(Math.min(this.steam.getMaxFill(), this.steam.getFill() + extra));
+	}
+
+	@Inject(method = {"update()V", "func_73660_a()V"}, at = @At("TAIL"), require = 1, remap = false)
+	private void ntmit$overheatWaterBoost(CallbackInfo ci) {
+		if (!this.ntmitOverheatBoost) return;
+		TileEntityRBMKBoiler boiler = (TileEntityRBMKBoiler) (Object) this;
+		World world = boiler.getWorld();
+		if (world == null || world.isRemote) return;
+		int extraWater = Math.min(boiler.feed.getFill(), this.consumption);
+		if (extraWater <= 0) return;
+		int extraSteam = Math.min(this.steam.getMaxFill() - this.steam.getFill(), this.output * 2);
+		boiler.feed.setFill(boiler.feed.getFill() - extraWater);
+		this.steam.setFill(this.steam.getFill() + extraSteam);
+		this.consumption += extraWater;
+		this.output += extraSteam;
+		boiler.heat -= extraWater * RbmkJumpHandler.boilerHeatConsumption(world);
 	}
 
 	@Inject(method = "getConsoleData", at = @At("TAIL"), require = 1, remap = false)
