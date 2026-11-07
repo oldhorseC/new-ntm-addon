@@ -1,7 +1,7 @@
 package com.ntmit.render;
 
 import com.ntmit.lib.RefStrings;
-import com.ntmit.lib.TurbinePaintAccess;
+import com.ntmit.lib.TurbinePaintStore;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.texture.DynamicTexture;
@@ -10,13 +10,11 @@ import javax.imageio.ImageIO;
 import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.client.resources.IResource;
 import net.minecraft.client.resources.IResourceManager;
-import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ResourceLocation;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -45,7 +43,6 @@ public final class TurbinePaintTextures {
 	private static final Map<String, BufferedImage> MASKS = new HashMap<String, BufferedImage>();
 	private static final Map<String, ResourceLocation> PAINTED = new HashMap<String, ResourceLocation>();
 	private static final Map<String, PartUv> PART_UVS = new HashMap<String, PartUv>();
-	private static final Map<Class<?>, Field> CORE_FIELDS = new HashMap<Class<?>, Field>();
 	private static final ThreadLocal<Context> CONTEXT = new ThreadLocal<Context>();
 	private static boolean partUvsLoaded;
 
@@ -120,26 +117,7 @@ public final class TurbinePaintTextures {
 	}
 
 	public static int colorOf(Object tile) {
-		int local = TurbinePaintAccess.NO_PAINT;
-		if (tile instanceof TurbinePaintAccess) {
-			local = ((TurbinePaintAccess) tile).ntmit$getPaintColor();
-			if (local >= 0) return local;
-		}
-		if (!(tile instanceof TileEntity)) return TurbinePaintAccess.NO_PAINT;
-		try {
-			Class<?> type = tile.getClass();
-			Field field = CORE_FIELDS.get(type);
-			if (field == null) {
-				field = type.getField("core");
-				CORE_FIELDS.put(type, field);
-			}
-			Object core = field.get(tile);
-			if (core instanceof TurbinePaintAccess) {
-				return ((TurbinePaintAccess) core).ntmit$getPaintColor();
-			}
-		} catch (Throwable throwable) {
-		}
-		return TurbinePaintAccess.NO_PAINT;
+		return TurbinePaintStore.getAny(tile);
 	}
 
 	private static float clamp(float value) {

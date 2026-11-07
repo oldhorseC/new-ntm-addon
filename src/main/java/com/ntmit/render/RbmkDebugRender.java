@@ -184,7 +184,7 @@ public class RbmkDebugRender {
 				float blue = kind == KIND_COLUMN ? 1.0F : 0.0F;
 				emitCell(buffer, BlockPos.fromLong(entry.getKey().longValue()), red, green, blue, -px, -py, -pz);
 			}
-			emitBlastBoxes(buffer, Math.max(1, RBMKDials.getColumnHeight(world)), -px, -py, -pz);
+			emitBlastBoxes(buffer, world, Math.max(1, RBMKDials.getColumnHeight(world)), -px, -py, -pz);
 			tessellator.draw();
 			for (Entity entity : world.loadedEntityList) {
 				if (!(entity instanceof EntityLidPlate)) continue;
@@ -629,7 +629,8 @@ public class RbmkDebugRender {
 		buffer.pos((double) x1, (double) y1, (double) z1).color(red, green, blue, 1.0F).endVertex();
 	}
 
-	private static void emitBlastBoxes(BufferBuilder buffer, int columnHeight, double ox, double oy, double oz) {
+	private static void emitBlastBoxes(BufferBuilder buffer, World world, int columnHeight, double ox, double oy,
+			double oz) {
 
 		Set<Long> done = new HashSet<>();
 		for (Long key : visibleBases) {
@@ -658,13 +659,14 @@ public class RbmkDebugRender {
 				}
 			}
 			if (minY == Integer.MAX_VALUE) continue;
+			int[] reactorBounds = new int[] { minX, maxX, minZ, maxZ };
+			int blastTop = com.ntmit.lib.RbmkBlastRaycast.blastTop(world, minY, reactorBounds, columnHeight);
 			double x0 = (double) (minX - com.ntmit.lib.RbmkBlastRaycast.EXPAND);
 			double x1 = (double) (maxX + 1 + com.ntmit.lib.RbmkBlastRaycast.EXPAND);
 			double z0 = (double) (minZ - com.ntmit.lib.RbmkBlastRaycast.EXPAND);
 			double z1 = (double) (maxZ + 1 + com.ntmit.lib.RbmkBlastRaycast.EXPAND);
 			double y0 = (double) (minY + columnHeight + com.ntmit.lib.RbmkBlastRaycast.BOTTOM_OFFSET);
-			double y1 = y0 + (double) (columnHeight + com.ntmit.lib.RbmkBlastRaycast.EXPAND
-					+ com.ntmit.lib.RbmkBlastRaycast.EXTRA_HEIGHT);
+			double y1 = (double) (blastTop + 1);
 			boxLine(buffer, ox, oy, oz, x0, y1, z0, x1, y1, z0, 0.2F, 0.9F, 1.0F);
 			boxLine(buffer, ox, oy, oz, x0, y1, z1, x1, y1, z1, 0.2F, 0.9F, 1.0F);
 			boxLine(buffer, ox, oy, oz, x0, y1, z0, x0, y1, z1, 0.2F, 0.9F, 1.0F);

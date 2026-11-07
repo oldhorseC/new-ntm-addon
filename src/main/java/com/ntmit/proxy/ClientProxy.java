@@ -90,9 +90,7 @@ public class ClientProxy extends ServerProxy {
 		net.minecraft.world.World world = mc.world;
 		if (world == null || message == null || message.pos == null) return;
 		net.minecraft.tileentity.TileEntity tile = world.getTileEntity(message.pos);
-		if (tile instanceof com.ntmit.lib.TurbinePaintAccess) {
-			((com.ntmit.lib.TurbinePaintAccess) tile).ntmit$setPaintColor(message.color);
-		}
+		if (tile != null) com.ntmit.lib.TurbinePaintStore.set(tile, message.color);
 	}
 
 	public static void handleSteamPacket(com.ntmit.packet.PacketNTMITSteam message) {

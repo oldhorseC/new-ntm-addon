@@ -52,6 +52,33 @@ public final class RbmkBlastRaycast {
 	public static final double TOP_SPEED_MAX = 4.4D;
 	public static final double KNOCK_SCALE = 0.55D;
 
+	public static final int CEILING_SCAN = 96;
+	public static final int MIN_BLAST_HEIGHT = 8;
+
+	public static int blastTop(World world, int baseY, int[] bounds, int columnHeight) {
+
+		int height = Math.max(columnHeight, 1);
+		int reactorTop = baseY + height - 1;
+		int bottomY = baseY + height + BOTTOM_OFFSET;
+		int fallback = bottomY + (height + EXPAND + EXTRA_HEIGHT) - 1;
+		if (world == null || bounds == null) return fallback;
+		int minX = Math.min(bounds[0], bounds[1]);
+		int maxX = Math.max(bounds[0], bounds[1]);
+		int minZ = Math.min(bounds[2], bounds[3]);
+		int maxZ = Math.max(bounds[2], bounds[3]);
+		int centerX = (minX + maxX) / 2;
+		int centerZ = (minZ + maxZ) / 2;
+		for (int y = reactorTop + 1; y <= reactorTop + CEILING_SCAN; y++) {
+			BlockPos pos = new BlockPos(centerX, y, centerZ);
+			if (!world.isBlockLoaded(pos)) break;
+			IBlockState state = world.getBlockState(pos);
+			if (state.getBlock().isAir(state, world, pos)) continue;
+			if (y - bottomY + 1 < MIN_BLAST_HEIGHT) return fallback;
+			return y;
+		}
+		return fallback;
+	}
+
 	public static void schedule(World world, BlockPos origin, int[] bounds, int columnHeight) {
 
 		if (world == null || world.isRemote || origin == null || bounds == null) return;
@@ -101,7 +128,7 @@ public final class RbmkBlastRaycast {
 			this.baseY = origin.getY();
 			this.reactorTop = this.baseY + height - 1;
 			this.bottomY = this.baseY + height + BOTTOM_OFFSET;
-			this.topY = this.bottomY + (height + EXPAND + EXTRA_HEIGHT) - 1;
+			this.topY = blastTop(world, this.baseY, bounds, height);
 			this.minX = this.reactorMinX - EXPAND;
 			this.maxX = this.reactorMaxX + EXPAND;
 			this.minZ = this.reactorMinZ - EXPAND;
@@ -287,13 +314,17 @@ public final class RbmkBlastRaycast {
 						tMaxZ += tDeltaZ;
 					}
 				}
-				if (x < this.minX || x > this.maxX || z < this.minZ || z > this.maxZ) return;
-				if (y < this.bottomY || y > this.topY) return;
+				if (y <= this.baseY) return;
+				if (y > 255) return;
 				double reach = target[6];
 				double distX = (double) x + 0.5D - ox;
 				double distY = (double) y + 0.5D - oy;
 				double distZ = (double) z + 0.5D - oz;
-				if (distX * distX + distY * distY + distZ * distZ > reach * reach) return;
+				double distSq = distX * distX + distY * distY + distZ * distZ;
+				if (distSq > reach * reach) return;
+				double fade = reach * 0.3D;
+				double remaining = reach - Math.sqrt(distSq);
+				if (remaining < fade && this.noise(x * 3, y * 3, z * 3) > remaining / fade) continue;
 				if (x >= this.reactorMinX && x <= this.reactorMaxX && z >= this.reactorMinZ && z <= this.reactorMaxZ
 						&& y <= this.reactorTop) {
 					continue;

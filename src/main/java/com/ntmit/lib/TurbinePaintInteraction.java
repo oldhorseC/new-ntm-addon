@@ -25,14 +25,11 @@ public final class TurbinePaintInteraction {
 		if (color < 0) {
 			return false;
 		}
-		TileEntity target = world.getTileEntity(pos);
-		if (!(target instanceof TurbinePaintAccess)) {
-			target = ((BlockDummyable) block).findCoreTE(world, pos);
-		}
-		if (!(target instanceof TurbinePaintAccess)) return false;
 		if (world.isRemote) return true;
-		TurbinePaintAccess paint = (TurbinePaintAccess) target;
-		paint.ntmit$setPaintColor(color);
+		TileEntity target = ((BlockDummyable) block).findCoreTE(world, pos);
+		if (target == null) target = world.getTileEntity(pos);
+		if (target == null) return false;
+		TurbinePaintStore.set(target, color);
 		target.markDirty();
 		PacketNTMITTurbinePaint.sendAround(world, target.getPos(), color);
 		return true;

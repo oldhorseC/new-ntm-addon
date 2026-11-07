@@ -10,6 +10,7 @@ public class TurbinePaintEventHandler {
 
 	@SubscribeEvent
 	public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+		if (event.getWorld() == null || event.getWorld().isRemote) return;
 		EntityPlayer player = event.getEntityPlayer();
 		EnumHand hand = event.getHand();
 		EnumHand screwHand = TurbinePaintInteraction.screwdriverHand(player, hand);
