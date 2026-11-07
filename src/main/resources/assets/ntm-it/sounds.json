@@ -1,0 +1,11 @@
+{
+  "rbmk_first_explosion": {
+    "category": "block",
+    "sounds": [
+      {
+        "name": "ntm-it:rbmk_first_explosion",
+        "stream": false
+      }
+    ]
+  }
+}

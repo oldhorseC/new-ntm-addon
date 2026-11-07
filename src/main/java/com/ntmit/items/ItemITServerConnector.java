@@ -40,7 +40,7 @@ public class ItemITServerConnector extends Item {
 	public static final String NBT_FIELDS = "fields";
 
 	public ItemITServerConnector(String name) {
-		this.setTranslationKey("item." + RefStrings.MODID + "." + name);
+		this.setTranslationKey(RefStrings.MODID + "." + name);
 		this.setRegistryName(name);
 		this.setMaxStackSize(1);
 		this.setCreativeTab(NTMITMod.tabITContent);

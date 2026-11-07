@@ -57,8 +57,7 @@ public class RenderRBMKBlueLight extends Render<EntityRBMKBlueLight> {
 		double dz = view.posZ - entity.posZ;
 		double clampedY = MathHelper.clamp(view.posY, entity.baseY, entity.topY);
 		double dy = view.posY - clampedY;
-		double liveDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-		double distance = entity.timeLocked ? entity.capturedDistance : liveDistance;
+		double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 		float distanceT = MathHelper.clamp((float) ((distance - DISTANCE_INVISIBLE) / (DISTANCE_FULL - DISTANCE_INVISIBLE)), 0.0F, 1.0F);
 		float distanceFade = distanceT * distanceT * (3.0F - 2.0F * distanceT);
 		if (distanceFade <= 0.0F) return;

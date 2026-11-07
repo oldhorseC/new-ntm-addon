@@ -3,6 +3,7 @@ package com.ntmit.main;
 import com.hbm.util.I18nUtil;
 import com.ntmit.blocks.BlockITServerColumn;
 import com.ntmit.blocks.ModBlocks;
+import com.ntmit.items.ModItems;
 import com.ntmit.tileentity.TileEntityITServerCompute;
 import com.ntmit.tileentity.TileEntityITServerCore;
 import com.ntmit.tileentity.TileEntityITServerHeatExchanger;
@@ -28,6 +29,7 @@ import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.client.model.ModelLoader;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraftforge.fml.common.network.FMLNetworkEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import org.lwjgl.opengl.GL11;
@@ -84,6 +86,8 @@ public class ModEventHandlerClient {
     public void registerModels(ModelRegistryEvent event) {
         registerBlockModel(ModBlocks.test_block, 0);
         registerBlockModel(ModBlocks.test_multiblock, 0);
+        registerItemModel(ModItems.dyatlov_steam_device, 0);
+        registerItemModel(ModItems.server_connector, 0);
     }
 
     private void registerBlockModel(Block block, int meta) {
@@ -92,6 +96,24 @@ public class ModEventHandlerClient {
 
         ModelLoader.setCustomModelResourceLocation(item, meta,
                 new ModelResourceLocation(block.getRegistryName(), "inventory"));
+    }
+
+    private void registerItemModel(Item item, int meta) {
+        if (item == null || item == Items.AIR || item.getRegistryName() == null) return;
+
+        ModelLoader.setCustomModelResourceLocation(item, meta,
+                new ModelResourceLocation(item.getRegistryName(), "inventory"));
+    }
+
+    @SubscribeEvent
+    public void onRbmkDebugHud(RenderGameOverlayEvent.Post event) {
+        if (event.getType() != RenderGameOverlayEvent.ElementType.ALL) return;
+        com.ntmit.render.RbmkDebugRender.renderHud(event.getResolution());
+    }
+
+    @SubscribeEvent
+    public void onClientDisconnect(FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
+        com.ntmit.render.RbmkDebugRender.reset();
     }
 
     @SubscribeEvent

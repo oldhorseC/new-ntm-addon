@@ -66,13 +66,11 @@ public class RbmkSurge {
 		if (te == null) return base;
 		World world = te.getWorld();
 		if (world == null || world.isRemote) return base;
-		RbmkFeedback.Cell cell = RbmkFeedback.cell(world, te.getPos());
 		float p = progress(te);
-		if (cell != null) p = Math.max(p, Math.max(RbmkFeedback.reasimProgress(te.reasimSteam), cell.progress()));
 		if (p <= 0F) return base;
 		boolean over = overTemp(te);
 		double mult = over ? OVERHEAT_MULTIPLIER : 1.0D;
-		if (over || (cell != null && cell.late())) {
+		if (over) {
 			return base * (1.0D + NEUTRON_RATIO * (double) p) * mult;
 		}
 		return base + ADD_NEUTRON * (double) p * mult;
@@ -82,13 +80,11 @@ public class RbmkSurge {
 		if (te == null) return base;
 		World world = te.getWorld();
 		if (world == null || world.isRemote) return base;
-		RbmkFeedback.Cell cell = RbmkFeedback.cell(world, te.getPos());
 		float p = progress(te);
-		if (cell != null) p = Math.max(p, Math.max(RbmkFeedback.reasimProgress(te.reasimSteam), cell.progress()));
 		if (p <= 0F) return base;
 		boolean over = overTemp(te);
 		double mult = over ? OVERHEAT_MULTIPLIER : 1.0D;
-		if (over || (cell != null && cell.late())) {
+		if (over) {
 			return Math.min(1.0D, Math.max(base, TRANSMITTANCE_MIN) * (1.0D + TRANSMITTANCE_RATIO * (double) p) * mult);
 		}
 		return Math.min(1.0D, base + ADD_TRANSMITTANCE * (double) p * mult);

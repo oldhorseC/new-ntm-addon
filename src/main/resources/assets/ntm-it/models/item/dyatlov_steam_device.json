@@ -1,6 +1,6 @@
 {
 	"parent": "item/handheld",
 	"textures": {
-		"layer0": "ntm-it:items/meltdown_tool"
+		"layer0": "ntm-it:items/dyatlov_steam_device"
 	}
 }

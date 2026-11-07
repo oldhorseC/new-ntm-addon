@@ -30,6 +30,9 @@ public class ClientProxy extends ServerProxy {
 
 		net.minecraftforge.fml.client.registry.RenderingRegistry.registerEntityRenderingHandler(com.ntmit.entity.EntityRBMKBlueLightMarker.class,
 				manager -> new com.ntmit.render.RenderRBMKBlueLightMarker(manager));
+
+		net.minecraftforge.fml.client.registry.RenderingRegistry.registerEntityRenderingHandler(com.ntmit.entity.EntityBlastChunk.class,
+				manager -> new com.ntmit.render.RenderBlastChunk(manager));
 	}
 
 	@Override
@@ -53,7 +56,6 @@ public class ClientProxy extends ServerProxy {
 
 	@Override
 	public void init(FMLInitializationEvent evt) {
-		net.minecraftforge.client.ClientCommandHandler.instance.registerCommand(new com.ntmit.command.CommandNTMIT());
 		super.init(evt);
 	}
 
@@ -65,6 +67,32 @@ public class ClientProxy extends ServerProxy {
 	@Override
 	public void onLoadComplete(FMLLoadCompleteEvent event) {
 		super.onLoadComplete(event);
+	}
+
+	public static void handleRbmkDebugPacket(boolean enabled) {
+		com.ntmit.render.RbmkDebugRender.setEnabled(enabled);
+		if (enabled) clearCameraShake();
+	}
+
+	private static void clearCameraShake() {
+		try {
+			Class<?> shakecam = Class.forName("com.leafia.passive.effects.LeafiaShakecam");
+			Object instances = shakecam.getField("instances").get(null);
+			if (instances instanceof java.util.Collection) ((java.util.Collection<?>) instances).clear();
+			shakecam.getField("blurSum").setFloat(null, 0.0F);
+			shakecam.getField("bloomSum").setFloat(null, 0.0F);
+		} catch (Throwable ignored) {
+		}
+	}
+
+	public static void handleTurbinePaintPacket(com.ntmit.packet.PacketNTMITTurbinePaint message) {
+		net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getMinecraft();
+		net.minecraft.world.World world = mc.world;
+		if (world == null || message == null || message.pos == null) return;
+		net.minecraft.tileentity.TileEntity tile = world.getTileEntity(message.pos);
+		if (tile instanceof com.ntmit.lib.TurbinePaintAccess) {
+			((com.ntmit.lib.TurbinePaintAccess) tile).ntmit$setPaintColor(message.color);
+		}
 	}
 
 	public static void handleSteamPacket(com.ntmit.packet.PacketNTMITSteam message) {

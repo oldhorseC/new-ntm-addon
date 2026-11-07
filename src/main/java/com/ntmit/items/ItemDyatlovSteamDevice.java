@@ -15,7 +15,7 @@ import net.minecraft.world.World;
 public class ItemDyatlovSteamDevice extends Item {
 
 	public ItemDyatlovSteamDevice(String name) {
-		this.setTranslationKey("item." + RefStrings.MODID + "." + name);
+		this.setTranslationKey(RefStrings.MODID + "." + name);
 		this.setRegistryName(name);
 		this.setMaxStackSize(1);
 		this.setCreativeTab(NTMITMod.tabITContent);

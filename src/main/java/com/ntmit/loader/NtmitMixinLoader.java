@@ -1,4 +1,4 @@
-package com.ntmit.mixin;
+package com.ntmit.loader;
 
 import zone.rong.mixinbooter.ILateMixinLoader;
 import zone.rong.mixinbooter.MixinLoader;

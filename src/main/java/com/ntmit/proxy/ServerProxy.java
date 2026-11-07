@@ -13,7 +13,10 @@ public class ServerProxy {
 	public void registerEntityRenderer() { }
 	public void registerBlockRenderer() { }
 
-	public void preInit(FMLPreInitializationEvent evt) { }
+	public void preInit(FMLPreInitializationEvent evt) {
+		com.ntmit.packet.PacketNTMITRbmkDebug.register();
+		com.ntmit.packet.PacketNTMITTurbinePaint.register();
+	}
 	public void init(FMLInitializationEvent evt) { }
 	public void postInit(FMLPostInitializationEvent evt) { }
 	public void onLoadComplete(FMLLoadCompleteEvent event) { }

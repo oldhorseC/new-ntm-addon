@@ -3,6 +3,7 @@ package com.ntmit.main;
 import com.ntmit.blocks.ModBlocks;
 import com.ntmit.creativetabs.TabITContent;
 import com.ntmit.items.ModItems;
+import com.ntmit.lib.ModSoundEvents;
 import com.ntmit.lib.RefStrings;
 import com.ntmit.proxy.ServerProxy;
 import net.minecraft.creativetab.CreativeTabs;
@@ -12,6 +13,7 @@ import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLLoadCompleteEvent;
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
+import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 import net.minecraftforge.fml.common.network.NetworkRegistry;
 import org.apache.logging.log4j.Logger;
 
@@ -36,10 +38,12 @@ public class NTMITMod {
 		logger = event.getModLog();
 		logger.info("{} {} preInit", RefStrings.NAME, RefStrings.VERSION);
 
+		ModSoundEvents.register();
 		proxy.registerRenderInfo();
 		net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new com.ntmit.lib.NTMITWorldRules());
 		net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new com.ntmit.lib.LidAchievements());
 		net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new com.ntmit.lib.RbmkDyatlovHandler());
+		net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new com.ntmit.lib.TurbinePaintEventHandler());
 		NetworkRegistry.INSTANCE.registerGuiHandler(instance, new ModGuiHandler());
 		ModItems.preInit();
 		ModBlocks.preInit();
@@ -52,6 +56,9 @@ public class NTMITMod {
 		net.minecraftforge.fml.common.registry.EntityRegistry.registerModEntity(
 				new net.minecraft.util.ResourceLocation(RefStrings.MODID, "rbmk_blue_light_marker"),
 				com.ntmit.entity.EntityRBMKBlueLightMarker.class, "rbmk_blue_light_marker", 2, instance, 32, 1, false);
+		net.minecraftforge.fml.common.registry.EntityRegistry.registerModEntity(
+				new net.minecraft.util.ResourceLocation(RefStrings.MODID, "blast_chunk"),
+				com.ntmit.entity.EntityBlastChunk.class, "blast_chunk", 3, instance, 160, 1, true);
 		net.minecraftforge.fml.common.registry.EntityRegistry.registerEgg(
 				new net.minecraft.util.ResourceLocation(RefStrings.MODID, "rbmk_blue_light_marker"), 0x1E90FF, 0x87CEFA);
 		com.ntmit.controlpanel.NtmitControlPanel.register();
@@ -61,6 +68,11 @@ public class NTMITMod {
 	@Mod.EventHandler
 	public void init(FMLInitializationEvent event) {
 		proxy.init(event);
+	}
+
+	@Mod.EventHandler
+	public void serverStarting(FMLServerStartingEvent event) {
+		event.registerServerCommand(new com.ntmit.command.CommandNTMIT());
 	}
 
 	@Mod.EventHandler

@@ -22,8 +22,8 @@ public final class RbmkSteamCurve {
 	public static final double B_START = 0.70D;
 	public static final double C_START = 0.95D;
 
-	public static final int A_PERIOD = 40;
-	public static final int B_PERIOD = 20;
+	public static final int A_PERIOD = 60;
+	public static final int B_PERIOD = 28;
 	public static final int C_PERIOD = 10;
 	public static final int D_PERIOD = 5;
 
