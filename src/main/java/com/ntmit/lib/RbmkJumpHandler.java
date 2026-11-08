@@ -149,7 +149,8 @@ public class RbmkJumpHandler {
 	public static final float SHAKE_RANGE_JUMP = 250.0F;
 	public static final float SHAKE_RANGE_BLAST = 125.0F;
 	public static final float MELTDOWN_SOUND_RANGE = 256.0F;
-	public static final float MELTDOWN_SOUND_SPEED = 32.0F;
+	public static final float MELTDOWN_SOUND_SPEED_FAST = 72.0F;
+	public static final float MELTDOWN_SOUND_SPEED_SLOW = 40.0F;
 	private static final String[] SHAKE_JUMP = new String[] { "type=smooth", "preset=EXPLOSION", "range=250", "bloomDulling*10000", "blurDulling*100" };
 	private static final String[] SHAKE_BLAST = new String[] { "type=smooth", "preset=EXPLOSION", "range=125", "intensity*2.625", "speed*1.25", "duration*1.2", "blurDulling*2.0", "bloomDulling*10000" };
 	private static final float SHAKE_RANGE_LAND = 250.0F;
@@ -1568,7 +1569,7 @@ public class RbmkJumpHandler {
 			double dist = player.getDistance(x, y, z);
 			if (dist > (double) MELTDOWN_SOUND_RANGE) continue;
 
-			int solidDelay = (int) Math.round(dist / ((double) MELTDOWN_SOUND_SPEED * 3.0D) * 20.0D);
+			int solidDelay = (int) Math.round(dist / (double) MELTDOWN_SOUND_SPEED_FAST * 20.0D);
 			float solidVolume = (float) Math.max(0.06D, 0.35D - dist / (double) MELTDOWN_SOUND_RANGE * 0.29D);
 			DelayedTick.scheduleWorldStart(world, solidDelay, w -> {
 				if (player.isDead || player.connection == null) return;
@@ -1576,7 +1577,7 @@ public class RbmkJumpHandler {
 						SoundCategory.BLOCKS, player.posX, player.posY, player.posZ, solidVolume, 0.55F));
 			});
 
-			int airDelay = (int) Math.round(dist / (double) MELTDOWN_SOUND_SPEED * 20.0D);
+			int airDelay = (int) Math.round(dist / (double) MELTDOWN_SOUND_SPEED_SLOW * 20.0D);
 			float airVolume = (float) Math.max(0.15D, 1.0D - dist / (double) MELTDOWN_SOUND_RANGE * 0.85D);
 			DelayedTick.scheduleWorldStart(world, airDelay, w -> {
 				if (player.isDead || player.connection == null) return;
